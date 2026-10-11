@@ -1801,11 +1801,21 @@ function showPage(id, btn) {
     te.style.display = 'none';
     teCollapseAll();
   }
+  // Nouvelle fenêtre ouverte : on repart toujours du haut de la page, peu importe
+  // où on était scrollé sur la précédente (sinon le journal s'ouvrait tout en bas).
+  const prevPg = document.querySelector('.page.active');
+  const pageChanged = !prevPg || prevPg.id !== 'page-' + id;
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
   const pg = document.getElementById('page-' + id);
   if (pg) pg.classList.add('active');
   if (btn) btn.classList.add('active');
+  if (pageChanged) {
+    window.scrollTo(0, 0);
+    if (document.scrollingElement) document.scrollingElement.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
   if (id === 'trackrecord') {
     setTimeout(() => {
       refreshAllCharts();
@@ -2326,27 +2336,119 @@ function viewTradeImages(id) {
     .map(
       (src, i) => `
     <div style="position:relative;text-align:center;">
-      <img src="${src}" style="max-width:100%;max-height:60vh;width:auto;height:auto;border-radius:8px;border:1px solid var(--border);display:block;margin:0 auto 8px;object-fit:contain;cursor:zoom-in;" onclick="openFullscreen('${src}')">
-      <button onclick="openFullscreen('${src}')" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:var(--mono);margin-bottom:8px;">⛶ Plein écran</button>
+      <img src="${src}" style="max-width:100%;max-height:60vh;width:auto;height:auto;border-radius:8px;border:1px solid var(--border);display:block;margin:0 auto 8px;object-fit:contain;cursor:zoom-in;" onclick="openTradeImageFull(${id},${i})">
+      <button onclick="openTradeImageFull(${id},${i})" style="background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:4px 10px;font-size:11px;cursor:pointer;font-family:var(--mono);margin-bottom:8px;">⛶ Plein écran</button>
     </div>`
     )
     .join('');
   modal.classList.add('open');
 }
 
-function openFullscreen(src) {
+// Ouvre le plein écran sur l'image i du trade, avec toutes les images du trade
+// en galerie (flèches clavier + bandeau de miniatures).
+function openTradeImageFull(id, i) {
+  const t = APP.trades.find(x => x.id === id);
+  if (!t || !t.images || !t.images.length) return;
+  openFullscreen(t.images[i], t.images, i);
+}
+
+// Galerie = toutes les miniatures du même bloc d'images (formulaire / fiche trade).
+function fsGalleryOf(el) {
+  const box = el && el.parentNode && el.parentNode.parentNode;
+  return box ? Array.from(box.querySelectorAll('img')).map(im => im.src) : [el.src];
+}
+
+// src : image à afficher. list (optionnel) : toutes les images de la galerie.
+// startIdx (optionnel) : position de src dans list.
+function openFullscreen(src, list, startIdx) {
+  const gallery = Array.isArray(list) && list.length ? list : [src];
+  let idx = Number.isInteger(startIdx) ? startIdx : gallery.indexOf(src);
+  if (idx < 0 || idx >= gallery.length) idx = 0;
+  const multi = gallery.length > 1;
+
   // Créer overlay plein écran
   const overlay = document.createElement('div');
   overlay.style.cssText =
     'position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out;overflow:hidden;touch-action:none;';
   const img = document.createElement('img');
-  img.src = src;
+  img.src = gallery[idx];
   img.draggable = false;
+  // Place pour le bandeau de miniatures en bas quand il y a plusieurs images
   img.style.cssText =
-    'max-width:95vw;max-height:95vh;width:auto;height:auto;object-fit:contain;border-radius:6px;touch-action:none;cursor:zoom-in;';
+    'max-width:95vw;max-height:' +
+    (multi ? '78vh' : '95vh') +
+    ';width:auto;height:auto;object-fit:contain;border-radius:6px;touch-action:none;cursor:zoom-in;' +
+    (multi ? 'margin-bottom:84px;' : '');
 
   function close() {
+    document.removeEventListener('keydown', onKey, true);
     if (overlay.parentNode) document.body.removeChild(overlay);
+  }
+
+  // ── Galerie : bandeau de miniatures + changement d'image ──
+  let strip = null;
+  const thumbs = [];
+  function updateThumbs() {
+    thumbs.forEach((th, i) => {
+      const on = i === idx;
+      th.style.opacity = on ? '1' : '0.35';
+      th.style.filter = on ? 'none' : 'grayscale(1)';
+      th.style.borderColor = on ? '#00e5a0' : 'transparent';
+    });
+    if (thumbs[idx] && thumbs[idx].scrollIntoView)
+      thumbs[idx].scrollIntoView({ block: 'nearest', inline: 'center' });
+  }
+  function showImage(i) {
+    if (!multi) return;
+    idx = (i + gallery.length) % gallery.length;
+    if (pendingClose) {
+      clearTimeout(pendingClose);
+      pendingClose = null;
+    }
+    scale = 1;
+    tx = 0;
+    ty = 0;
+    img.src = gallery[idx];
+    applyTransform(false);
+    updateThumbs();
+  }
+  function onKey(e) {
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      showImage(idx + 1);
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      e.stopPropagation();
+      showImage(idx - 1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  }
+  document.addEventListener('keydown', onKey, true);
+  if (multi) {
+    strip = document.createElement('div');
+    strip.style.cssText =
+      'position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;max-width:92vw;overflow-x:auto;padding:4px;cursor:default;';
+    gallery.forEach((s, i) => {
+      const th = document.createElement('img');
+      th.src = s;
+      th.draggable = false;
+      th.style.cssText =
+        'flex:0 0 auto;width:72px;height:54px;object-fit:cover;border-radius:6px;border:2px solid transparent;cursor:pointer;transition:opacity .15s,filter .15s;';
+      th.onclick = e => {
+        e.stopPropagation();
+        showImage(i);
+      };
+      thumbs.push(th);
+      strip.appendChild(th);
+    });
+    // Un clic dans le bandeau (entre deux miniatures) ne ferme pas la visionneuse
+    strip.onclick = e => e.stopPropagation();
+    // Le bandeau ne doit pas déclencher le zoom/glisser de l'image
+    strip.addEventListener('pointerdown', e => e.stopPropagation());
   }
 
   // ── Zoom (molette souris / pincement tactile) + déplacement (glisser) ──
@@ -2489,8 +2591,10 @@ function openFullscreen(src) {
     close();
   };
   overlay.appendChild(img);
+  if (strip) overlay.appendChild(strip);
   overlay.appendChild(closeBtn);
   document.body.appendChild(overlay);
+  updateThumbs();
 }
 
 function deleteTradeImage(id, idx) {
@@ -5917,7 +6021,7 @@ function renderEditImages(existing) {
     (existing || [])
       .map(
         (src, i) => `<div style="position:relative;display:inline-block;margin:4px;">
-    <img src="${src}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:zoom-in;" onclick="openFullscreen(this.src)">
+    <img src="${src}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:zoom-in;" onclick="openFullscreen(this.src, fsGalleryOf(this))">
     <button onclick="removeExistingImg(${i})" style="position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border:none;border-radius:3px;padding:1px 5px;cursor:pointer;font-size:10px;">×</button>
   </div>`
       )
@@ -5925,7 +6029,7 @@ function renderEditImages(existing) {
     (window._editImages || [])
       .map(
         (src, i) => `<div style="position:relative;display:inline-block;margin:4px;">
-    <img src="${src}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #4f8ef7;cursor:zoom-in;" onclick="openFullscreen(this.src)">
+    <img src="${src}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:1px solid #4f8ef7;cursor:zoom-in;" onclick="openFullscreen(this.src, fsGalleryOf(this))">
     <button onclick="removeNewImg(${i})" style="position:absolute;top:2px;right:2px;background:#ef4444;color:#fff;border:none;border-radius:3px;padding:1px 5px;cursor:pointer;font-size:10px;">×</button>
   </div>`
       )

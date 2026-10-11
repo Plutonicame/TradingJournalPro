@@ -2655,6 +2655,10 @@ body.cf-nav-force-column.cf-mode-normal .nav-mobile-row1,
 body.cf-nav-force-column.cf-mode-ultrawide .nav-mobile-row1{flex:1 1 auto;min-width:0;}
 body.cf-nav-force-column.cf-mode-normal .nav-mobile-row2,
 body.cf-nav-force-column.cf-mode-ultrawide .nav-mobile-row2{flex:0 0 auto;border-top:none;padding:0 16px 0 0;}
+/* Ultra wide uniquement : les horloges sont centrées sur la largeur de TOUT l'écran
+   (et non au milieu de l'espace restant entre le logo et les cases de droite). */
+body.cf-nav-force-column.cf-mode-ultrawide .nav-mobile{position:relative;}
+body.cf-nav-force-column.cf-mode-ultrawide .nav-mobile-clocks{position:absolute;left:50%;top:0;bottom:0;transform:translateX(-50%);flex:none;margin:0;}
 `;
   document.head.appendChild(style);
 }
