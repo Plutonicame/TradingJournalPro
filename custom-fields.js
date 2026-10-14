@@ -2960,3 +2960,167 @@ if (window.matchMedia) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all);
   else all();
 })();
+
+
+// ══ NOTES TYPES (journal de trading + fenêtre de modification) ══
+// Dès qu'il y a du texte dans « Notes », un bouton disquette permet d'enregistrer
+// ce texte sous un nom ; chaque note enregistrée apparaît ensuite à droite, avec
+// le même bouton carré : un clic recopie le texte dans la zone Notes (texte normal,
+// modifiable). Stockage dans APP.lists.note_tpls (synchronisé comme les listes).
+(function () {
+  const FLOPPY =
+    '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M7 3v5h8V3"/><rect x="7" y="13" width="10" height="8" rx="1"/></svg>';
+  if (!document.getElementById('ntStyle')) {
+    const st = document.createElement('style');
+    st.id = 'ntStyle';
+    st.textContent = `
+.nt-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-bottom:4px;}
+.nt-row > label{margin-bottom:0!important;}
+.nt-sq{width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border:1px solid var(--card-border,var(--border));border-radius:5px;background:var(--card-header-background,var(--surface));color:var(--muted);cursor:pointer;}
+.nt-sq:hover{color:var(--btn-p-bg,var(--green));border-color:var(--btn-p-bg,var(--green));}
+.nt-item{display:inline-flex;align-items:center;gap:5px;max-width:100%;}
+.nt-name{font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;}
+.nt-name:hover{text-decoration:underline;}
+.nt-del{border:none;background:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;opacity:.5;}
+.nt-del:hover{opacity:1;color:var(--red);}
+`;
+    document.head.appendChild(st);
+  }
+
+  function tpls() {
+    if (!APP.lists) APP.lists = {};
+    if (!Array.isArray(APP.lists.note_tpls)) APP.lists.note_tpls = [];
+    return APP.lists.note_tpls;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  }
+
+  function askName(cb) {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    ov.innerHTML = `<div style="background:var(--confirm-box-background,var(--surface));border:1px solid var(--confirm-box-border,var(--border));border-radius:10px;padding:18px;width:100%;max-width:340px;font-family:var(--mono);">
+      <div style="color:var(--confirm-box-h3-color,var(--text));font-size:14px;font-weight:700;margin-bottom:10px;">Nom de la note</div>
+      <input type="text" maxlength="40" placeholder="Ex : Analyse complète" style="width:100%;box-sizing:border-box;margin-bottom:12px;">
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn btn-g" data-a="c">ANNULER</button><button class="btn btn-p" data-a="o">ENREGISTRER</button>
+      </div></div>`;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('input');
+    const close = () => ov.remove();
+    const ok = () => {
+      const v = inp.value.trim();
+      if (!v) { inp.focus(); return; }
+      close();
+      cb(v);
+    };
+    ov.querySelector('[data-a="c"]').onclick = close;
+    ov.querySelector('[data-a="o"]').onclick = ok;
+    ov.addEventListener('mousedown', (e) => { if (e.target === ov) close(); });
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); ok(); }
+      if (e.key === 'Escape') close();
+    });
+    setTimeout(() => inp.focus(), 30);
+  }
+
+  function setup(prefix) {
+    const ta = document.getElementById(prefix + '-notes');
+    if (!ta) return null;
+    const fg = ta.closest('.fg');
+    const label = fg && fg.querySelector('label');
+    if (!fg || !label) return null;
+    let row = fg.querySelector('.nt-row');
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 'nt-row';
+      row.dataset.prefix = prefix;
+      fg.insertBefore(row, label);
+      row.appendChild(label);
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'nt-sq nt-save';
+      save.title = 'Enregistrer cette note comme modèle';
+      save.innerHTML = FLOPPY;
+      save.style.display = 'none';
+      save.onclick = () => {
+        const text = ta.value;
+        if (!text.trim()) return;
+        askName((name) => {
+          const list = tpls();
+          const ex = list.find((x) => x.name.toLowerCase() === name.toLowerCase());
+          if (ex) ex.text = text;
+          else list.push({id: Date.now(), name, text});
+          if (typeof saveState === 'function') saveState();
+          refreshAll();
+        });
+      };
+      row.appendChild(save);
+      const box = document.createElement('span');
+      box.className = 'nt-list';
+      box.style.cssText = 'display:contents;';
+      row.appendChild(box);
+      ta.addEventListener('input', () => refresh(prefix));
+    }
+    return row;
+  }
+  function refresh(prefix) {
+    const row = setup(prefix);
+    if (!row) return;
+    const ta = document.getElementById(prefix + '-notes');
+    row.querySelector('.nt-save').style.display = ta.value.length > 0 ? 'inline-flex' : 'none';
+    const box = row.querySelector('.nt-list');
+    const list = tpls();
+    box.innerHTML = list
+      .map(
+        (x) => `<span class="nt-item"><button type="button" class="nt-sq" data-id="${x.id}" title="Insérer cette note">${FLOPPY}</button><span class="nt-name" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</span><button type="button" class="nt-del" data-del="${x.id}" title="Supprimer ce modèle">✕</button></span>`
+      )
+      .join('');
+    box.querySelectorAll('[data-id]').forEach((el) => {
+      el.onclick = () => {
+        const t = tpls().find((x) => String(x.id) === el.dataset.id);
+        if (!t) return;
+        ta.value = ta.value.trim() ? ta.value.replace(/\s+$/, '') + '\n\n' + t.text : t.text;
+        if (typeof autoGrow === 'function') autoGrow(ta);
+        refresh(prefix);
+        ta.focus();
+      };
+    });
+    box.querySelectorAll('[data-del]').forEach((el) => {
+      el.onclick = () => {
+        const t = tpls().find((x) => String(x.id) === el.dataset.del);
+        if (!t) return;
+        showConfirm('Supprimer le modèle', 'Supprimer la note « ' + t.name + ' » ?', () => {
+          APP.lists.note_tpls = tpls().filter((x) => x !== t);
+          if (typeof saveState === 'function') saveState();
+          refreshAll();
+        });
+      };
+    });
+  }
+  function refreshAll() {
+    refresh('f');
+    refresh('e');
+  }
+
+  // Le texte peut changer sans événement « input » (réinitialisation, ouverture d'un trade...) :
+  // autoGrow() est appelé dans ces cas, on s'y accroche.
+  if (typeof window.autoGrow === 'function') {
+    const og = window.autoGrow;
+    window.autoGrow = function () {
+      const r = og.apply(this, arguments);
+      try { refreshAll(); } catch (e) {}
+      return r;
+    };
+  }
+  ['renderTable', 'resetForm', 'openEditTrade'].forEach((fn) => {
+    if (typeof window[fn] !== 'function') return;
+    const o = window[fn];
+    window[fn] = function () {
+      const r = o.apply(this, arguments);
+      try { refreshAll(); } catch (e) {}
+      return r;
+    };
+  });
+  refreshAll();
+})();

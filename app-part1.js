@@ -2632,7 +2632,7 @@ function renderTable() {
       const p = pctMap[t.id] || 0;
       const pctHtml = `<span class="${p >= 0 ? 'rp' : 'rn'}">${p >= 0 ? '+' : ''}${p.toFixed(2)}%</span>`;
       return `<tr>
-    <td style="font-family:var(--mono)">${escapeHtml(t.date) || '—'}</td>
+    <td style="font-family:var(--mono);white-space:nowrap"><button class="del-btn" style="margin-right:8px" onclick="openEditTrade(${t.id})" title="Modifier">✎</button>${escapeHtml(t.date) || '—'}</td>
     <td style="font-family:var(--mono)">${escapeHtml(t.heure) || '—'}</td>
     <td style="color:var(--muted)">${escapeHtml(t.session) || '—'}</td>
     <td><strong>${escapeHtml(t.paire) || '—'}</strong>${t.backtest ? '&nbsp;<span style="font-size:11px;line-height:1;padding:1px 3px;background:var(--bt-bg);color:var(--bt-tx);border-radius:3px;font-family:var(--mono);display:inline-block;">BT</span>' : ''}</td>
@@ -2646,7 +2646,6 @@ function renderTable() {
     <td style="white-space:nowrap">${starsHtml(t.stars)}</td>
     <td style="text-align:center">${imgEyeHtml(t)}</td>
     <td style="white-space:nowrap">
-      <button class="del-btn" style="margin-right:2px" onclick="openEditTrade(${t.id})" title="Modifier">✎</button>
       <button class="del-btn" onclick="deleteTrade(${t.id})" title="Supprimer"><span class="deco-emoji">🗑</span><span class="deco-emoji-alt">✕</span></button>
     </td>
   </tr>`;
