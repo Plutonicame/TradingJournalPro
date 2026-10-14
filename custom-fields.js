@@ -3053,10 +3053,40 @@ if (window.matchMedia) {
         });
       };
       row.appendChild(save);
+      // ✕ identique à celui de « Nouveau trade », tout à droite : vide la zone Notes (avec confirmation Oui / Non)
+      const clr = document.createElement('button');
+      clr.type = 'button';
+      clr.className = 'btn btn-g nt-clear';
+      clr.textContent = '✕';
+      clr.style.cssText = 'margin-left:auto;display:none;';
+      clr.title = 'Supprimer tout le contenu des notes';
+      clr.onclick = () => {
+        if (!ta.value.length) return;
+        showConfirm('Vider les notes', 'Supprimer tout le contenu de la zone Notes (setup, émotions…) ?', () => {
+          ta.value = '';
+          if (typeof autoGrow === 'function') autoGrow(ta);
+          refresh(prefix);
+          ta.focus();
+        });
+        const m = document.getElementById('confirmModal');
+        const yes = m.querySelector('.btn-d'), no = m.querySelector('.btn-g');
+        const oy = yes.textContent, on = no.textContent;
+        yes.textContent = 'OUI';
+        no.textContent = 'NON';
+        const mo = new MutationObserver(() => {
+          if (!m.classList.contains('open')) {
+            yes.textContent = oy;
+            no.textContent = on;
+            mo.disconnect();
+          }
+        });
+        mo.observe(m, {attributes: true, attributeFilter: ['class']});
+      };
       const box = document.createElement('span');
       box.className = 'nt-list';
       box.style.cssText = 'display:contents;';
       row.appendChild(box);
+      row.appendChild(clr);
       ta.addEventListener('input', () => refresh(prefix));
     }
     return row;
@@ -3066,6 +3096,7 @@ if (window.matchMedia) {
     if (!row) return;
     const ta = document.getElementById(prefix + '-notes');
     row.querySelector('.nt-save').style.display = ta.value.length > 0 ? 'inline-flex' : 'none';
+    row.querySelector('.nt-clear').style.display = ta.value.length > 0 ? '' : 'none';
     const box = row.querySelector('.nt-list');
     const list = tpls();
     box.innerHTML = list
