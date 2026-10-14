@@ -2978,11 +2978,8 @@ if (window.matchMedia) {
 .nt-row > label{margin-bottom:0!important;}
 .nt-sq{width:26px;height:26px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;border:1px solid var(--card-border,var(--border));border-radius:5px;background:var(--card-header-background,var(--surface));color:var(--muted);cursor:pointer;}
 .nt-sq:hover{color:var(--btn-p-bg,var(--green));border-color:var(--btn-p-bg,var(--green));}
-.nt-item{display:inline-flex;align-items:center;gap:5px;max-width:100%;}
-.nt-name{font-family:var(--mono);font-size:11px;color:var(--text);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:160px;}
-.nt-name:hover{text-decoration:underline;}
-.nt-del{border:none;background:none;color:var(--muted);cursor:pointer;font-size:12px;padding:0 2px;opacity:.5;}
-.nt-del:hover{opacity:1;color:var(--red);}
+.nt-chip .nt-x{margin-left:8px;opacity:.55;font-size:10px;line-height:1;}
+.nt-chip .nt-x:hover{opacity:1;color:var(--red);}
 `;
     document.head.appendChild(st);
   }
@@ -3073,10 +3070,10 @@ if (window.matchMedia) {
     const list = tpls();
     box.innerHTML = list
       .map(
-        (x) => `<span class="nt-item"><button type="button" class="nt-sq" data-id="${x.id}" title="Insérer cette note">${FLOPPY}</button><span class="nt-name" data-id="${x.id}" title="${esc(x.name)}">${esc(x.name)}</span><button type="button" class="nt-del" data-del="${x.id}" title="Supprimer ce modèle">✕</button></span>`
+        (x) => `<span class="chip nt-chip" data-id="${x.id}" title="Insérer cette note">${esc(x.name)}<span class="nt-x" data-del="${x.id}" title="Supprimer cette note">✕</span></span>`
       )
       .join('');
-    box.querySelectorAll('[data-id]').forEach((el) => {
+    box.querySelectorAll('.nt-chip').forEach((el) => {
       el.onclick = () => {
         const t = tpls().find((x) => String(x.id) === el.dataset.id);
         if (!t) return;
@@ -3087,10 +3084,11 @@ if (window.matchMedia) {
       };
     });
     box.querySelectorAll('[data-del]').forEach((el) => {
-      el.onclick = () => {
+      el.onclick = (ev) => {
+        ev.stopPropagation();
         const t = tpls().find((x) => String(x.id) === el.dataset.del);
         if (!t) return;
-        showConfirm('Supprimer le modèle', 'Supprimer la note « ' + t.name + ' » ?', () => {
+        showConfirm('Supprimer la note', 'Supprimer la note « ' + t.name + ' » ?', () => {
           APP.lists.note_tpls = tpls().filter((x) => x !== t);
           if (typeof saveState === 'function') saveState();
           refreshAll();
