@@ -2136,9 +2136,48 @@ function pcShowUndoToast() {
 // Ajuste la hauteur d'un textarea à son contenu (1 ligne mini, autant que nécessaire au-delà, jamais de scroll interne)
 function autoGrow(el) {
   if (!el) return;
+  // On mémorise le défilement de la fenêtre / de la page : remettre la hauteur
+  // à 'auto' raccourcit brièvement le contenu et ferait sinon « sauter » l'écran.
+  const snap = [];
+  for (let p = el.parentElement; p; p = p.parentElement) snap.push([p, p.scrollTop]);
   el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
+  const cs = getComputedStyle(el);
+  const border = cs.boxSizing === 'border-box'
+    ? (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+    : 0;
+  el.style.height = Math.ceil(el.scrollHeight + border) + 'px';
+  snap.forEach(([p, t]) => { if (p.scrollTop !== t) p.scrollTop = t; });
 }
+// Écrire dans Notes ne doit rien faire bouger : le navigateur fait défiler
+// la fenêtre pour montrer le curseur, on annule ce défilement automatique.
+(function () {
+  let snap = null;
+  const isNotes = (t) => t && t.tagName === 'TEXTAREA' && (t.id === 'e-notes' || t.id === 'f-notes');
+  const take = (t) => {
+    snap = [];
+    for (let p = t.parentElement; p; p = p.parentElement) snap.push([p, p.scrollTop]);
+  };
+  const restore = () => { if (snap) snap.forEach(([p, t]) => { if (p.scrollTop !== t) p.scrollTop = t; }); };
+  document.addEventListener('beforeinput', (e) => { if (isNotes(e.target)) take(e.target); }, true);
+  document.addEventListener('input', (e) => {
+    if (!isNotes(e.target) || !snap) return;
+    restore();
+    requestAnimationFrame(restore);
+    setTimeout(() => { restore(); snap = null; }, 30);
+  });
+  // Si la largeur change (barre de défilement, rotation...), on recalcule la hauteur.
+  if (window.ResizeObserver) {
+    const w = new WeakMap();
+    const ro = new ResizeObserver((entries) => {
+      entries.forEach((en) => {
+        const el = en.target, cw = Math.round(en.contentRect.width);
+        if (w.get(el) !== cw) { w.set(el, cw); if (el.offsetParent) autoGrow(el); }
+      });
+    });
+    const hook = () => ['e-notes', 'f-notes'].forEach((id) => { const el = document.getElementById(id); if (el && !el._agRO) { el._agRO = 1; ro.observe(el); } });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', hook); else hook();
+  }
+})();
 function resetForm() {
   [
     'f-date',

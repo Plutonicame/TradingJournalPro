@@ -2716,3 +2716,49 @@ body.cf-mode-phone .hamburger {
   padding: 4px 10px;
   line-height: 1.2;
 }
+
+/* ===== Fenêtre "Modifier le trade" : interface fine en mode téléphone =====
+   Tout tient dans la largeur de l'écran, sans défilement horizontal.
+   (Mode téléphone forcé/auto = body.cf-mode-phone ; filet de sécurité
+   en écran étroit via media query.) */
+body.cf-mode-phone #editModal .cp-modal {
+  width: calc(100vw - 16px) !important;
+  max-width: calc(100vw - 16px);
+  padding: 12px;
+  overflow-x: hidden;
+}
+body.cf-mode-phone #editModal .form-grid {
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+body.cf-mode-phone #editModal .form-grid > * { min-width: 0; }
+body.cf-mode-phone #editModal .fg input,
+body.cf-mode-phone #editModal .fg select,
+body.cf-mode-phone #editModal .fg textarea {
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 7px;
+}
+body.cf-mode-phone #editModal #e-tf-wrap,
+body.cf-mode-phone #editModal #e-conf-wrap { flex-wrap: wrap !important; }
+body.cf-mode-phone #editModal .chip { padding: 3px 7px; font-size: 9px; }
+body.cf-mode-phone #editModal .cp-modal > div:last-child { gap: 6px; }
+@media (max-width: 520px) {
+  #editModal .cp-modal {
+    width: calc(100vw - 16px) !important;
+    max-width: calc(100vw - 16px);
+    padding: 12px;
+    overflow-x: hidden;
+  }
+  #editModal .form-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  #editModal .form-grid > * { min-width: 0; }
+  #editModal .fg input, #editModal .fg select, #editModal .fg textarea {
+    min-width: 0; max-width: 100%; padding: 6px 7px;
+  }
+  #editModal #e-tf-wrap, #editModal #e-conf-wrap { flex-wrap: wrap !important; }
+  #editModal .chip { padding: 3px 7px; font-size: 9px; }
+}
+
+/* Zone Notes : la largeur ne change plus quand la barre de défilement de la
+   fenêtre apparaît (sinon le texte se re-découpe et la fin est masquée). */
+#editModal .cp-modal { scrollbar-gutter: stable; }
