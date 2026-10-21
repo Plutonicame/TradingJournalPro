@@ -1751,6 +1751,7 @@ function drawRiskChart(period) {
   const axC = gc('--risk-axis') || '#f59e0b';
   const grC = gc('--risk-grid') || 'rgba(100,116,139,.1)';
   const lineC = gc('--risk-line') || '#f59e0b';
+  const evC = gc('--risk-event-color') || '#f6bd4f';
   const baseC = gc('--risk-base') || 'rgba(100,116,139,.5)';
   const base = RBASE();
   // La courbe vient de computeRiskHistory() : mêmes règles que le badge de la barre de navigation
@@ -1795,10 +1796,11 @@ function drawRiskChart(period) {
           backgroundColor: rg,
           fill: true,
           tension: 0,
-          pointRadius: entries.map(e => (e.kind ? 6 : 2)),
+          pointRadius: entries.map(e => (e.kind ? 3.5 : 2)),
+          hoverRadius: entries.map(e => (e.kind ? 5 : 4)),
           pointStyle: entries.map(e => (e.kind ? 'rectRot' : 'circle')),
-          pointBackgroundColor: entries.map(e => (e.kind ? '#f6bd4f' : lineC)),
-          pointBorderColor: entries.map(e => (e.kind ? '#f6bd4f' : lineC)),
+          pointBackgroundColor: entries.map(e => (e.kind ? evC : lineC)),
+          pointBorderColor: entries.map(e => (e.kind ? evC : lineC)),
           borderWidth: 2,
           stepped: 'before'
         },
@@ -1824,7 +1826,7 @@ function drawRiskChart(period) {
         // Point d'événement (ajustement manuel / bascule du risque intelligent) : aucun trade derrière →
         // on ouvre les Paramètres avec l'explication de la modification
         if (e && e.kind) {
-          openRiskEventInfo(e.evId);
+          openRiskEventInfo(e.evId, !!BT_STATE.risk);
           return;
         }
         const t = e && tr.find(x => x.id === e.id);
@@ -2962,10 +2964,11 @@ function confirmRmAdjust() {
 
 // Clic sur un point d'événement du graphique : redirige vers les Paramètres + explication
 let _rmEvId = null;
-function openRiskEventInfo(evId) {
+function openRiskEventInfo(evId, includeBT) {
   const ev = RM_EVENTS().find(e => e.id === evId);
   if (!ev) return;
-  const hist = computeRiskHistory(true).hist;
+  // Même historique que celui affiché dans le graphique (avec ou sans backtests) → valeurs « de X à Y » exactes
+  const hist = computeRiskHistory(includeBT === undefined ? !!BT_STATE.risk : !!includeBT).hist;
   const i = hist.findIndex(h => h.evId === evId);
   const after = i >= 0 ? hist[i].rp : null;
   const before = i > 0 ? hist[i - 1].rp : null;
@@ -3004,7 +3007,12 @@ function openRiskEventInfo(evId) {
         arrow +
         '. La courbe d’avant n’a pas été modifiée.';
   }
-  _rmEvId = ev.kind === 'adjust' ? evId : null;
+  // Annulable : un ajustement toujours ; une bascule / un changement de réglages seulement s'il est le dernier de son type
+  const sameKind = RM_EVENTS()
+    .filter(e => e.kind === ev.kind)
+    .sort(rmCmpDT);
+  const isLast = sameKind.length && sameKind[sameKind.length - 1].id === evId;
+  _rmEvId = ev.kind === 'adjust' || isLast ? evId : null;
   document.getElementById('rmEvTitle').textContent = title;
   document.getElementById('rmEvMsg').textContent = msg;
   document.getElementById('rmEvDel').style.display = _rmEvId ? '' : 'none';
@@ -3019,14 +3027,46 @@ function deleteRmEvent() {
   const id = _rmEvId;
   closeRmEvent();
   if (!id) return;
+  const ev = RM_EVENTS().find(e => e.id === id);
+  if (!ev) return;
   showConfirm(
-    'Supprimer l’ajustement ?',
-    'Le risque revient comme si tu n’avais jamais fait cet ajustement (les trades suivants sont recalculés).',
+    'Supprimer la modification ?',
+    ev.kind === 'adjust'
+      ? 'Le risque revient comme si tu n’avais jamais fait cet ajustement (les trades suivants sont recalculés).'
+      : ev.kind === 'smart'
+        ? 'Le risque intelligent revient à son état d’avant cette bascule.'
+        : 'Tes réglages de risque reviennent à ceux d’avant cette modification.',
     () => {
       lssAcc(
         'tj_rm_events',
         RM_EVENTS().filter(e => e.id !== id)
       );
+      // Annuler une bascule / un changement de réglages = remettre l'état d'avant
+      if (ev.kind === 'smart') lssAcc('tj_smart_risk', !ev.on);
+      if (ev.kind === 'config' && ev.prev) {
+        const m = {
+          base: 'tj_risk',
+          rmax: 'tj_risk_max',
+          upTrigger: 'tj_rm_up_trigger',
+          upTrades: 'tj_rm_up_trades',
+          upPct: 'tj_rm_up_pct',
+          upVarType: 'tj_rm_up_var_type',
+          upVarVal: 'tj_rm_up_var_val',
+          downTrigger: 'tj_rm_down_trigger',
+          downTrades: 'tj_rm_down_trades',
+          downPct: 'tj_rm_down_pct',
+          downVarType: 'tj_rm_down_var_type',
+          downVarVal: 'tj_rm_down_var_val'
+        };
+        Object.keys(m).forEach(k => {
+          if (ev.prev[k] != null) lssAcc(m[k], ev.prev[k]);
+        });
+      }
+      if (ev.kind === 'smart') {
+        const on = SMART();
+        document.getElementById('tglSmart').classList.toggle('on', on);
+        document.getElementById('smartLbl').textContent = on ? 'Activé' : 'Désactivé';
+      }
       rmRefreshAfterChange();
     }
   );
@@ -4534,6 +4574,12 @@ function buildTV() {
     {v: '--ct-pnl', l: 'Titre', page: 'Track Record', section: 'P&L'},
     {v: '--risk-bg', l: 'Fond', page: 'Track Record', section: 'Risk Management (graphique)'},
     {v: '--risk-line', l: 'Courbe', page: 'Track Record', section: 'Risk Management (graphique)'},
+    {
+      v: '--risk-event-color',
+      l: 'Losange (modification du risque)',
+      page: 'Track Record',
+      section: 'Risk Management (graphique)'
+    },
     {
       v: '--risk-fill-top',
       l: 'Dégradé haut',

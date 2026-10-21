@@ -37,6 +37,7 @@
   --pnl-axis: #64748b;
   --pnl-grid: rgba(100, 116, 139, 0.1);
   --risk-line: #f59e0b;
+  --risk-event-color: #f6bd4f;
   --risk-fill-top: rgba(245, 158, 11, 0.25);
   --risk-fill-bot: rgba(245, 158, 11, 0);
   --risk-base: rgba(100, 116, 139, 0.5);

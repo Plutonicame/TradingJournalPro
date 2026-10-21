@@ -518,6 +518,7 @@
   '--rm-down-border': '#fb7185',
   '--rm-down-text': '#fb7185',
   '--rm-up-border': '#34d399',
+  '--risk-event-color': '#f6bd4f',
   '--rm-adjust-btn-background': '#1b2030',
   '--rm-adjust-btn-border': '#f6bd4f',
   '--rm-adjust-btn-color': '#f6bd4f',
