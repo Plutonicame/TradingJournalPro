@@ -174,6 +174,7 @@
   '--cf-link-title': '#e7e9f1',
   '--cf-link-text': '#8189a1',
   '--cf-link-list-text': '#e7e9f1',
+  '--cf-link-check': '#3b82f6',
   '--cp-collapse-btn-hover-bordercolo': '#8b9bff',
   '--cp-collapse-btn-hover-color': '#8b9bff',
   '--cp-hex-background': '#0b0d14',

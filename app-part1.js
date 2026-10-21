@@ -4961,6 +4961,7 @@ function buildTV() {
     {v: '--cf-link-title', l: 'Titre', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--cf-link-text', l: 'Texte', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--cf-link-list-text', l: 'Liste des sous-comptes', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-check', l: 'Case cochée (couleur autour de la coche)', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--tgl-off', l: 'Toggle off', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-on', l: 'Toggle on', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-thumb', l: 'Toggle rond', page: 'Paramètres', section: 'Interrupteurs'},

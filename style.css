@@ -362,6 +362,7 @@
   --cf-link-title: #e2e8f0;
   --cf-link-text: #64748b;
   --cf-link-list-text: #e2e8f0;
+  --cf-link-check: #3b82f6;
   --alert-color: #00e5a0;
   --footer-color: #64748b;
 }
@@ -2802,4 +2803,7 @@ body.cf-mode-phone #editModal .cp-modal > div:last-child { gap: 6px; }
 #cfLinkModal #cfAccList,
 #cfLinkModal #cfAccList label {
   color: var(--cf-link-list-text);
+}
+#cfLinkModal .cfAcc {
+  accent-color: var(--cf-link-check);
 }
