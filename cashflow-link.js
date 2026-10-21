@@ -80,14 +80,14 @@
     var m = document.getElementById('cfLinkModal');
     if (m) m.remove();
   }
-  async function showAuthorize(req) {
+  async function showAuthorize(req, preview) {
     closeModal();
     var m = document.createElement('div');
     m.className = 'confirm-modal open';
     m.id = 'cfLinkModal';
     m.style.zIndex = 5000;
     var box = '<div class="confirm-box" style="width:360px;text-align:left;">';
-    if (!originAllowed(req.ret)) {
+    if (!preview && !originAllowed(req.ret)) {
       m.innerHTML =
         box +
         '<h3>Liaison impossible</h3><p>Cette application n’est pas autorisée à recevoir de données de TJP.</p>' +
@@ -101,6 +101,9 @@
     }
     m.innerHTML =
       box +
+      (preview
+        ? '<div style="background:#e11d48;color:#fff;font:700 10px monospace;text-align:center;padding:4px;margin:-8px -8px 12px;border-radius:4px;">SIMULATION — rien n’est envoyé ni créé</div>'
+        : '') +
       '<h3>AUTORISER « ' + esc(req.label).toUpperCase() + ' »</h3>' +
       '<p style="text-align:left;">Cette application recevra uniquement le <strong>PnL</strong> (montant et date de chaque trade, <strong>hors backtest</strong>) des sous-comptes que tu coches. Aucune autre donnée de trade n’est partagée.</p>' +
       '<div id="cfAccList" style="margin:0 0 10px;font-size:12px;color:var(--muted);">Chargement de tes sous-comptes…</div>' +
@@ -112,10 +115,18 @@
       ok = document.getElementById('cfOk'),
       err = document.getElementById('cfErr');
     document.getElementById('cfDeny').onclick = function () {
+      if (preview) return closeModal();
       backTo(req, {tjp_error: 'access_denied'});
     };
 
     var accs = [];
+    if (preview) {
+      accs = [
+        {id: 'acc_demo', name: 'Compte démo'},
+        {id: 'acc_reel', name: 'Compte réel'},
+        {id: 'acc_invest', name: 'Compte d’investissement'}
+      ];
+    } else
     try {
       var r = await sb.from('journal_data').select('acc_id, acc_name, deleted').eq('user_id', currentUser.id);
       var seen = {};
@@ -147,6 +158,11 @@
         return accs[+c.dataset.i].id;
       });
       if (!ids.length) return;
+      if (preview) {
+        closeModal();
+        alert('Simulation terminée : rien n’a été envoyé ni créé.');
+        return;
+      }
       ok.disabled = true;
       ok.textContent = '…';
       err.style.display = 'none';
@@ -172,6 +188,11 @@
       }
     };
   }
+
+  // Simulation (pour tester l'apparence de la fenêtre sans rien créer) : window.tjpCashflowPreview()
+  window.tjpCashflowPreview = function () {
+    showAuthorize({ret: '', state: '', label: 'Cashflow Tracker'}, true);
+  };
 
   // Attend que l'utilisateur soit connecté, que son PIN soit validé et que l'app soit chargée
   (function waitReady() {
