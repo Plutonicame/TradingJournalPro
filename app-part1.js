@@ -1487,7 +1487,11 @@ function computeRiskHistory(includeBT = false) {
   // (sans aucun événement → comportement historique inchangé : mode actuel appliqué à tout l'historique)
   const rmEvs = RM_EVENTS().map(e => Object.assign({}, e, {_ev: true}));
   const smartEvs = rmEvs.filter(e => e.kind === 'smart').sort(rmCmpDT);
-  let smart = smartEvs.length ? !smartEvs[0].on : !!SMART();
+  let smart = smartEvs.length
+    ? smartEvs[0].prev != null
+      ? !!smartEvs[0].prev
+      : !smartEvs[0].on
+    : !!SMART();
   // Événements placés AVANT les trades en cas d'égalité date+heure (tri stable)
   const items = [...rmEvs, ...sorted].sort(rmCmpDT);
   let rp = base,
@@ -2890,7 +2894,7 @@ function toggleSmartRisk() {
   const c = SMART();
   // On enregistre la bascule dans le journal daté AVANT de changer le mode : l'historique passé
   // (courbe + RR des anciens trades) reste identique, seul ce qui suit change.
-  rmAddEvent(Object.assign({kind: 'smart', on: !c}, rmNowStamp()));
+  rmAddEvent(Object.assign({kind: 'smart', on: !c, prev: !!c}, rmNowStamp()));
   lssAcc('tj_smart_risk', !c);
   document.getElementById('tglSmart').classList.toggle('on', !c);
   document.getElementById('smartLbl').textContent = !c ? 'Activé' : 'Désactivé';
@@ -3007,21 +3011,60 @@ function openRiskEventInfo(evId, includeBT) {
         arrow +
         '. La courbe d’avant n’a pas été modifiée.';
   }
-  // Annulable : un ajustement toujours ; une bascule / un changement de réglages seulement s'il est le dernier de son type
-  const sameKind = RM_EVENTS()
-    .filter(e => e.kind === ev.kind)
-    .sort(rmCmpDT);
-  const isLast = sameKind.length && sameKind[sameKind.length - 1].id === evId;
-  _rmEvId = ev.kind === 'adjust' || isLast ? evId : null;
+  _rmEvId = evId;
   document.getElementById('rmEvTitle').textContent = title;
   document.getElementById('rmEvMsg').textContent = msg;
-  document.getElementById('rmEvDel').style.display = _rmEvId ? '' : 'none';
-  const navBtn = document.querySelector('button.nav-tab[onclick*="showPage(\'modifs\',this)"]');
-  showPage('modifs', navBtn);
+  document.getElementById('rmEvDel').style.display = '';
   document.getElementById('rmEventModal').classList.add('open');
 }
 function closeRmEvent() {
   document.getElementById('rmEventModal').classList.remove('open');
+}
+const RM_CFG_KEYS = {
+  base: 'tj_risk',
+  rmax: 'tj_risk_max',
+  upTrigger: 'tj_rm_up_trigger',
+  upTrades: 'tj_rm_up_trades',
+  upPct: 'tj_rm_up_pct',
+  upVarType: 'tj_rm_up_var_type',
+  upVarVal: 'tj_rm_up_var_val',
+  downTrigger: 'tj_rm_down_trigger',
+  downTrades: 'tj_rm_down_trades',
+  downPct: 'tj_rm_down_pct',
+  downVarType: 'tj_rm_down_var_type',
+  downVarVal: 'tj_rm_down_var_val'
+};
+// Supprime UNE modification (n'importe laquelle) et annule uniquement son effet, sans toucher aux autres.
+function rmUndoEvent(id) {
+  const evs = RM_EVENTS();
+  const ev = evs.find(e => e.id === id);
+  if (!ev) return;
+  const rest = evs.filter(e => e.id !== id);
+  if (ev.kind === 'smart') {
+    const prevOn = ev.prev != null ? !!ev.prev : !ev.on;
+    // La bascule suivante (si elle existe) repart du mode d'avant celle qu'on supprime ;
+    // sinon c'est le mode actuel qui revient à son état d'avant.
+    const next = rest
+      .filter(e => e.kind === 'smart' && rmCmpDT(e, ev) >= 0)
+      .sort(rmCmpDT)[0];
+    if (next) next.prev = prevOn;
+    else lssAcc('tj_smart_risk', prevOn);
+  } else if (ev.kind === 'config' && ev.prev && ev.cfg) {
+    const changed = Object.keys(RM_CFG_KEYS).filter(k => ev.prev[k] !== ev.cfg[k]);
+    // Réglages actuels : on remet l'ancienne valeur seulement si personne ne l'a re-modifiée depuis
+    changed.forEach(k => {
+      if (rmCfgSnapshot()[k] === ev.cfg[k]) lssAcc(RM_CFG_KEYS[k], ev.prev[k]);
+    });
+    // Modifications de réglages plus récentes : on retire la valeur de cet événement de leurs photos
+    rest.forEach(e => {
+      if (e.kind !== 'config' || !e.prev || !e.cfg || rmCmpDT(e, ev) < 0) return;
+      changed.forEach(k => {
+        if (e.prev[k] === ev.cfg[k]) e.prev[k] = ev.prev[k];
+        if (e.cfg[k] === ev.cfg[k]) e.cfg[k] = ev.prev[k];
+      });
+    });
+  }
+  lssAcc('tj_rm_events', rest);
 }
 function deleteRmEvent() {
   const id = _rmEvId;
@@ -3034,39 +3077,13 @@ function deleteRmEvent() {
     ev.kind === 'adjust'
       ? 'Le risque revient comme si tu n’avais jamais fait cet ajustement (les trades suivants sont recalculés).'
       : ev.kind === 'smart'
-        ? 'Le risque intelligent revient à son état d’avant cette bascule.'
-        : 'Tes réglages de risque reviennent à ceux d’avant cette modification.',
+        ? 'Cette bascule du risque intelligent est annulée.'
+        : 'Cette modification de réglages est annulée.',
     () => {
-      lssAcc(
-        'tj_rm_events',
-        RM_EVENTS().filter(e => e.id !== id)
-      );
-      // Annuler une bascule / un changement de réglages = remettre l'état d'avant
-      if (ev.kind === 'smart') lssAcc('tj_smart_risk', !ev.on);
-      if (ev.kind === 'config' && ev.prev) {
-        const m = {
-          base: 'tj_risk',
-          rmax: 'tj_risk_max',
-          upTrigger: 'tj_rm_up_trigger',
-          upTrades: 'tj_rm_up_trades',
-          upPct: 'tj_rm_up_pct',
-          upVarType: 'tj_rm_up_var_type',
-          upVarVal: 'tj_rm_up_var_val',
-          downTrigger: 'tj_rm_down_trigger',
-          downTrades: 'tj_rm_down_trades',
-          downPct: 'tj_rm_down_pct',
-          downVarType: 'tj_rm_down_var_type',
-          downVarVal: 'tj_rm_down_var_val'
-        };
-        Object.keys(m).forEach(k => {
-          if (ev.prev[k] != null) lssAcc(m[k], ev.prev[k]);
-        });
-      }
-      if (ev.kind === 'smart') {
-        const on = SMART();
-        document.getElementById('tglSmart').classList.toggle('on', on);
-        document.getElementById('smartLbl').textContent = on ? 'Activé' : 'Désactivé';
-      }
+      rmUndoEvent(id);
+      const on = SMART();
+      document.getElementById('tglSmart').classList.toggle('on', on);
+      document.getElementById('smartLbl').textContent = on ? 'Activé' : 'Désactivé';
       rmRefreshAfterChange();
     }
   );
