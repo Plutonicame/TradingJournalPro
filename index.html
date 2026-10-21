@@ -55,6 +55,34 @@
   </div>
 </div>
 
+
+<!-- MODALE : ajustement manuel du risque -->
+<div class="confirm-modal" id="rmAdjustModal">
+  <div class="confirm-box" style="width:340px;">
+    <h3>± AJUSTER LE RISQUE</h3>
+    <p>Risque actuel : <strong id="rmAdjCur">—</strong><br>Change-le maintenant sans modifier ta stratégie de risque intelligent.</p>
+    <div class="btn-row" style="margin-bottom:10px;">
+      <button type="button" class="btn btn-p" id="rmAdjAdd" onclick="rmAdjSetSign(1)">＋ Ajouter</button>
+      <button type="button" class="btn btn-g" id="rmAdjSub" onclick="rmAdjSetSign(-1)">− Retirer</button>
+    </div>
+    <input type="number" id="rmAdjVal" min="0.01" step="0.1" placeholder="De combien de % ? (ex : 1)" oninput="rmAdjPreview()" style="width:100%;font-size:14px;text-align:center;margin-bottom:8px;">
+    <label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px;">Prend effet le</label>
+    <input type="date" id="rmAdjDate" style="width:100%;font-size:13px;margin-bottom:10px;">
+    <p id="rmAdjPreview" style="font-family:var(--mono);margin-bottom:8px;min-height:16px;"></p>
+    <p id="rmAdjErr" style="display:none;color:var(--red);"></p>
+    <div class="btn-row"><button type="button" class="btn btn-g" onclick="closeRmAdjust()">ANNULER</button><button type="button" class="btn btn-p" onclick="confirmRmAdjust()">VALIDER</button></div>
+  </div>
+</div>
+
+<!-- MODALE : explication d'un point d'événement du graphique Risk Management -->
+<div class="confirm-modal" id="rmEventModal">
+  <div class="confirm-box" style="width:340px;">
+    <h3 id="rmEvTitle">Modification du risque</h3>
+    <p id="rmEvMsg"></p>
+    <div class="btn-row"><button type="button" class="btn btn-g" onclick="closeRmEvent()">FERMER</button><button type="button" class="btn btn-d" id="rmEvDel" onclick="deleteRmEvent()">SUPPRIMER L'AJUSTEMENT</button></div>
+  </div>
+</div>
+
 <!-- MODALE PIN : suppression de tous les trades -->
 <div class="confirm-modal" id="deleteAllModal">
   <div class="confirm-box">
@@ -440,7 +468,8 @@
   </div>
 
   <div class="card">
-    <div class="card-header"><div class="card-title" data-editable data-tvar="--crt-riskreglages" style="color:var(--crt-riskreglages,#00e5a0)">RISK MANAGEMENT — RÉGLAGES</div></div>
+    <div class="card-header"><div class="card-title" data-editable data-tvar="--crt-riskreglages" style="color:var(--crt-riskreglages,#00e5a0)">RISK MANAGEMENT — RÉGLAGES</div>
+      <button type="button" id="rmAdjustBtn" class="rm-adjust-btn" onclick="openRmAdjust()" title="Changer le risque actuel sans toucher au risque intelligent"><span data-editable data-tvar="--rm-adjust-btn-color" style="color:var(--rm-adjust-btn-color,#f6bd4f)">± AJUSTER LE RISQUE</span></button></div>
     <div class="card-body">
       <div style="font-size:11px;color:var(--muted);margin-bottom:14px;" data-editable>Configure quand et de combien le risk intelligent augmente ou diminue.</div>
 

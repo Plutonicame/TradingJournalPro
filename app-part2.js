@@ -517,7 +517,8 @@ async function exportLocalBackup() {
           downTrades: localStorage.getItem(k('tj_rm_down_trades')),
           downPct: localStorage.getItem(k('tj_rm_down_pct')),
           downVarType: localStorage.getItem(k('tj_rm_down_var_type')),
-          downVarVal: localStorage.getItem(k('tj_rm_down_var_val'))
+          downVarVal: localStorage.getItem(k('tj_rm_down_var_val')),
+          events: localStorage.getItem(k('tj_rm_events'))
         }
       };
     });
@@ -619,6 +620,7 @@ async function importLocalBackup(event) {
         if (rm.downPct) localStorage.setItem(kk('rm_down_pct'), rm.downPct);
         if (rm.downVarType) localStorage.setItem(kk('rm_down_var_type'), rm.downVarType);
         if (rm.downVarVal) localStorage.setItem(kk('rm_down_var_val'), rm.downVarVal);
+        if (rm.events) localStorage.setItem(kk('rm_events'), rm.events);
       }
       const accs = getAccounts();
       if (!accs.find(a => a.id === acc.id)) {
@@ -1013,7 +1015,8 @@ function buildSyncPayload(trades) {
       down_trades: localStorage.getItem(accKey('tj_rm_down_trades')),
       down_pct: localStorage.getItem(accKey('tj_rm_down_pct')),
       down_var_type: localStorage.getItem(accKey('tj_rm_down_var_type')),
-      down_var_val: localStorage.getItem(accKey('tj_rm_down_var_val'))
+      down_var_val: localStorage.getItem(accKey('tj_rm_down_var_val')),
+      events: localStorage.getItem(accKey('tj_rm_events')) // journal des ajustements de risque / bascules du risque intelligent
     }),
     // ia_chat_data retiré d'ici : les conversations IA sont désormais globales
     // (synchronisées séparément par pushGlobalChatData, pas liées à un acc_id).
@@ -1604,6 +1607,7 @@ function _applyCloudDataDirect(data, cloudTrades) {
         localStorage.setItem(accKey('tj_rm_down_var_type'), rm.down_var_type);
       if (rm.down_var_val != null)
         localStorage.setItem(accKey('tj_rm_down_var_val'), rm.down_var_val);
+      if (rm.events != null) localStorage.setItem(accKey('tj_rm_events'), rm.events);
     } catch (e) {
       console.warn('Restauration rm_config échouée :', e);
     }

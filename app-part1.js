@@ -253,7 +253,8 @@ function initAccountsIfNeeded() {
       'tj_rm_down_trades',
       'tj_rm_down_pct',
       'tj_rm_down_var_type',
-      'tj_rm_down_var_val'
+      'tj_rm_down_var_val',
+    'tj_rm_events'
     ];
     keys.forEach(k => {
       const v = localStorage.getItem(k);
@@ -411,7 +412,8 @@ function migrateToPerUserStorageIfNeeded() {
         'tj_rm_down_trades',
         'tj_rm_down_pct',
         'tj_rm_down_var_type',
-        'tj_rm_down_var_val'
+        'tj_rm_down_var_val',
+    'tj_rm_events'
       ];
       legacyAccounts.forEach(acc => {
         perAccKeys.forEach(k => {
@@ -1052,7 +1054,8 @@ function deleteAccount(accId) {
     'tj_rm_down_trades',
     'tj_rm_down_pct',
     'tj_rm_down_var_type',
-    'tj_rm_down_var_val'
+    'tj_rm_down_var_val',
+    'tj_rm_events'
   ];
   keys.forEach(k => localStorage.removeItem(profileKey(`${k}__${accId}`)));
   // Marquer ce compte comme supprimé dans le cloud : même mécanisme que les
@@ -1422,12 +1425,71 @@ function applyRiskDecrease(rp, downVarType, downVarVal, runCap) {
   return Math.max(0.01, Math.round((rp - delta) * 100) / 100);
 }
 
+// ══ ÉVÉNEMENTS DE RISQUE (ajustements manuels + activation/désactivation du risque intelligent) ══
+// Journal daté, rejoué dans l'ordre avec les trades par computeRiskHistory() : l'historique
+// passé n'est donc JAMAIS recalculé quand on change le risque ou qu'on coupe le risque intelligent.
+//   {id, kind:'adjust', date, heure, delta}  → ajoute/retire `delta` points de % au risque courant
+//   {id, kind:'smart',  date, heure, on}     → risque intelligent activé (on:true) / coupé (on:false)
+const RM_EVENTS = () => {
+  const e = lsAcc('tj_rm_events', []);
+  return Array.isArray(e) ? e : [];
+};
+const rmCmpDT = (a, b) =>
+  (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || '');
+function rmNowStamp() {
+  const n = new Date(),
+    p2 = v => String(v).padStart(2, '0');
+  return {
+    date: n.getFullYear() + '-' + p2(n.getMonth() + 1) + '-' + p2(n.getDate()),
+    heure: p2(n.getHours()) + ':' + p2(n.getMinutes())
+  };
+}
+// Photo des réglages de risque en vigueur (stratégie + risque de base + plafond)
+function rmCfgSnapshot() {
+  return {
+    base: RBASE(),
+    rmax: RMAX(),
+    upTrigger: RM_UP_TRIGGER(),
+    upTrades: RM_UP_TRADES(),
+    upPct: RM_UP_PCT(),
+    upVarType: RM_UP_VAR_TYPE(),
+    upVarVal: RM_UP_VAR_VAL(),
+    downTrigger: RM_DOWN_TRIGGER(),
+    downTrades: RM_DOWN_TRADES(),
+    downPct: RM_DOWN_PCT(),
+    downVarType: RM_DOWN_VAR_TYPE(),
+    downVarVal: RM_DOWN_VAR_VAL()
+  };
+}
+// À appeler APRÈS avoir enregistré de nouveaux réglages, avec la photo prise AVANT : si quelque chose a
+// changé, on enregistre un événement daté → les réglages ne s'appliquent QU'À PARTIR de ce moment.
+function rmRecordCfgChange(prev) {
+  const cfg = rmCfgSnapshot();
+  if (JSON.stringify(prev) === JSON.stringify(cfg)) return;
+  rmAddEvent(Object.assign({kind: 'config', prev, cfg}, rmNowStamp()));
+}
+function rmAddEvent(ev) {
+  const evs = RM_EVENTS();
+  evs.push(Object.assign({id: 'rme_' + Date.now() + '_' + Math.floor(Math.random() * 1000)}, ev));
+  lssAcc('tj_rm_events', evs);
+}
+
 function computeRiskHistory(includeBT = false) {
-  const sorted = [...(includeBT ? APP.trades : realTrades())].sort(
-    (a, b) => a.date.localeCompare(b.date) || (a.heure || '').localeCompare(b.heure || '')
-  );
-  const base = RBASE(),
-    smart = SMART();
+  const sorted = [...(includeBT ? APP.trades : realTrades())].sort(rmCmpDT);
+  // Réglages au départ : si des réglages ont déjà été modifiés, on repart de ceux d'AVANT la 1re modification
+  const cfgEvs = RM_EVENTS()
+    .filter(e => e.kind === 'config' && e.prev && e.cfg)
+    .sort(rmCmpDT);
+  const cfg0 = cfgEvs.length ? cfgEvs[0].prev : rmCfgSnapshot();
+  let base = cfg0.base,
+    rmax = cfg0.rmax;
+  // Événements de risque : mode (intelligent / fixe) au départ = l'inverse du 1er basculement enregistré
+  // (sans aucun événement → comportement historique inchangé : mode actuel appliqué à tout l'historique)
+  const rmEvs = RM_EVENTS().map(e => Object.assign({}, e, {_ev: true}));
+  const smartEvs = rmEvs.filter(e => e.kind === 'smart').sort(rmCmpDT);
+  let smart = smartEvs.length ? !smartEvs[0].on : !!SMART();
+  // Événements placés AVANT les trades en cas d'égalité date+heure (tri stable)
+  const items = [...rmEvs, ...sorted].sort(rmCmpDT);
   let rp = base,
     ws = 0,
     ls2 = 0;
@@ -1441,20 +1503,79 @@ function computeRiskHistory(includeBT = false) {
     realLS = 0,
     maxRealWS = 0,
     maxRealLS = 0;
-  const hist = [{date: 'Départ', rp: base, ws: 0, ls: 0, realWs: 0, realLs: 0}];
+  const hist = [{date: 'Départ', base, rp: base, ws: 0, ls: 0, realWs: 0, realLs: 0}];
 
-  const upTrigger = RM_UP_TRIGGER(),
-    upTrades = RM_UP_TRADES(),
-    upPct = RM_UP_PCT();
-  const upVarType = RM_UP_VAR_TYPE(),
-    upVarVal = RM_UP_VAR_VAL();
-  const downTrigger = RM_DOWN_TRIGGER(),
-    downTrades = RM_DOWN_TRADES(),
-    downPct = RM_DOWN_PCT();
-  const downVarType = RM_DOWN_VAR_TYPE(),
-    downVarVal = RM_DOWN_VAR_VAL();
+  let upTrigger = cfg0.upTrigger,
+    upTrades = cfg0.upTrades,
+    upPct = cfg0.upPct;
+  let upVarType = cfg0.upVarType,
+    upVarVal = cfg0.upVarVal;
+  let downTrigger = cfg0.downTrigger,
+    downTrades = cfg0.downTrades,
+    downPct = cfg0.downPct;
+  let downVarType = cfg0.downVarType,
+    downVarVal = cfg0.downVarVal;
 
-  sorted.forEach(t => {
+  items.forEach(t => {
+    if (t._ev) {
+      if (t.kind === 'adjust') {
+        // Ajustement manuel : change le risque instantanément, sans toucher à la stratégie ni aux compteurs
+        rp = Math.max(0.01, Math.round((rp + (parseFloat(t.delta) || 0)) * 100) / 100);
+      } else if (t.kind === 'config' && t.cfg) {
+        // Nouveaux réglages : valables à partir d'ici seulement (le passé a déjà été calculé avec les anciens)
+        const c = t.cfg;
+        const baseChanged = c.base !== base;
+        base = c.base;
+        rmax = c.rmax;
+        upTrigger = c.upTrigger;
+        upTrades = c.upTrades;
+        upPct = c.upPct;
+        upVarType = c.upVarType;
+        upVarVal = c.upVarVal;
+        downTrigger = c.downTrigger;
+        downTrades = c.downTrades;
+        downPct = c.downPct;
+        downVarType = c.downVarType;
+        downVarVal = c.downVarVal;
+        if (baseChanged) rp = base; // nouveau risque de base → appliqué dès maintenant
+        // Nouvelle stratégie : compteurs repartis de zéro à partir du capital actuel
+        highestEq = runCap;
+        appliedSteps = 0;
+        upRefCap = runCap;
+        upAppliedSteps = 0;
+        ws = 0;
+        ls2 = 0;
+      } else if (t.kind === 'smart') {
+        smart = !!t.on;
+        if (!smart) {
+          rp = base; // risque intelligent coupé → risque fixe de base à partir de ce moment
+        } else {
+          // Réactivation : on repart du risque actuel avec des compteurs neufs
+          highestEq = runCap;
+          appliedSteps = 0;
+          upRefCap = runCap;
+          upAppliedSteps = 0;
+          ws = 0;
+          ls2 = 0;
+        }
+      }
+      hist.push({
+        date: t.date,
+        heure: t.heure || '',
+        kind: t.kind,
+        evId: t.id,
+        delta: t.delta,
+        on: t.on,
+        base,
+        prevBase: t.prev ? t.prev.base : undefined,
+        rp,
+        ws,
+        ls: ls2,
+        realWs: realWS,
+        realLs: realLS
+      });
+      return;
+    }
     const res = t.res || 0;
     const rpUsed = rp,
       capUsed = runCap; // risque % et capital RÉELLEMENT actifs quand ce trade a été pris (avant son propre résultat et un éventuel palier déclenché par lui)
@@ -1478,7 +1599,7 @@ function computeRiskHistory(includeBT = false) {
         if (wasInDrawdown) {
           // Rattrapage : retour au plus haut après un drawdown → on applique une hausse
           const delta = rmVarToPct(upVarType, upVarVal, runCap);
-          rp = Math.min(RMAX(), Math.round((rp + delta) * 100) / 100);
+          rp = Math.min(rmax, Math.round((rp + delta) * 100) / 100);
           ws = 0;
           upRefCap = runCap;
           upAppliedSteps = 0;
@@ -1487,7 +1608,7 @@ function computeRiskHistory(includeBT = false) {
           ws++;
           if (upTrades > 0 && ws % upTrades === 0) {
             const delta = rmVarToPct(upVarType, upVarVal, runCap);
-            rp = Math.min(RMAX(), Math.round((rp + delta) * 100) / 100);
+            rp = Math.min(rmax, Math.round((rp + delta) * 100) / 100);
           }
         }
       } else if (res < 0) {
@@ -1502,7 +1623,7 @@ function computeRiskHistory(includeBT = false) {
           const newSteps = gainSteps - upAppliedSteps;
           for (let _i = 0; _i < newSteps; _i++) {
             const delta = rmVarToPct(upVarType, upVarVal, runCap);
-            rp = Math.min(RMAX(), Math.round((rp + delta) * 100) / 100);
+            rp = Math.min(rmax, Math.round((rp + delta) * 100) / 100);
           }
           upAppliedSteps = gainSteps;
         }
@@ -1537,6 +1658,7 @@ function computeRiskHistory(includeBT = false) {
       date: t.date,
       heure: t.heure || '',
       id: t.id,
+      base,
       rp,
       rpUsed,
       capUsed,
@@ -1575,7 +1697,8 @@ function getRiskHistMap() {
     RM_DOWN_PCT(),
     RM_DOWN_VAR_TYPE(),
     RM_DOWN_VAR_VAL(),
-    RMAX()
+    RMAX(),
+    JSON.stringify(RM_EVENTS())
   ].join('|');
   if (_rrHistCache && _rrHistSig === sig) return _rrHistCache;
   const map = new Map();
@@ -1629,50 +1752,31 @@ function drawRiskChart(period) {
   const grC = gc('--risk-grid') || 'rgba(100,116,139,.1)';
   const lineC = gc('--risk-line') || '#f59e0b';
   const baseC = gc('--risk-base') || 'rgba(100,116,139,.5)';
-  const rmax = RMAX(),
-    base = RBASE(),
-    smart = SMART();
-  let rp = base,
-    ws = 0,
-    ls2 = 0;
-  let runCap = CAPITAL(),
-    highestEq = CAPITAL(),
-    appliedSteps = 0;
-  const labels = ['Départ'],
-    riskData = [base];
-  tr.forEach(t => {
-    const res = t.res || 0;
-    runCap += res;
-    if (smart) {
-      if (runCap > highestEq) {
-        const wasInDrawdown = appliedSteps > 0;
-        highestEq = runCap;
-        appliedSteps = 0;
-        if (wasInDrawdown) {
-          rp = Math.min(rmax, Math.round((rp + 0.5) * 100) / 100);
-          ws = 0;
-        } else if (res > 0) {
-          ws++;
-          if (ws % 3 === 0) rp = Math.min(rmax, Math.round((rp + 0.5) * 100) / 100);
-        }
-      } else {
-        const dd = highestEq > 0 ? ((highestEq - runCap) / highestEq) * 100 : 0;
-        const ddSteps = Math.floor(dd / 5);
-        if (ddSteps > appliedSteps) {
-          const newSteps = ddSteps - appliedSteps;
-          for (let _i = 0; _i < newSteps; _i++)
-            rp = Math.max(0.01, Math.round((rp - 0.5) * 100) / 100);
-          appliedSteps = ddSteps;
-          ws = 0;
-          ls2++;
-        } else if (res < 0) {
-          ws = 0;
-        }
-      }
-    }
-    labels.push(t.date);
-    riskData.push(rp);
+  const base = RBASE();
+  // La courbe vient de computeRiskHistory() : mêmes règles que le badge de la barre de navigation
+  // (réglages du risk management, ajustements manuels, activation/coupure du risque intelligent).
+  const full = computeRiskHistory(!!BT_STATE.risk).hist;
+  const ids = new Set(tr.map(t => t.id));
+  const firstT = tr.length ? tr[0] : null;
+  const lastD = tr.length ? tr[tr.length - 1].date : null;
+  // Points affichés : les trades de la période + les événements de risque (ajustement / bascule) compris dans la période
+  const pts = [];
+  full.forEach((h, i) => {
+    if (i === 0) return;
+    if (h.kind) {
+      const inRange = period === 'tout' || (firstT && h.date >= firstT.date && h.date <= lastD);
+      if (inRange) pts.push(h);
+    } else if (ids.has(h.id)) pts.push(h);
   });
+  // Point de départ : risque en vigueur juste avant le 1er point affiché
+  let startRp = full[0].rp;
+  if (pts.length) {
+    const idx = full.indexOf(pts[0]);
+    if (idx > 0) startRp = full[idx - 1].rp;
+  }
+  const entries = [{date: 'Départ', rp: startRp, start: true}, ...pts];
+  const labels = entries.map(e => e.date);
+  const riskData = entries.map(e => e.rp);
   const ctx = document.getElementById('cRisk').getContext('2d');
   const ftop = gc('--risk-fill-top') || 'rgba(245,158,11,.25)',
     fbot = gc('--risk-fill-bot') || 'rgba(245,158,11,0)';
@@ -1691,13 +1795,16 @@ function drawRiskChart(period) {
           backgroundColor: rg,
           fill: true,
           tension: 0,
-          pointRadius: 2,
+          pointRadius: entries.map(e => (e.kind ? 6 : 2)),
+          pointStyle: entries.map(e => (e.kind ? 'rectRot' : 'circle')),
+          pointBackgroundColor: entries.map(e => (e.kind ? '#f6bd4f' : lineC)),
+          pointBorderColor: entries.map(e => (e.kind ? '#f6bd4f' : lineC)),
           borderWidth: 2,
           stepped: 'before'
         },
         {
           label: 'Base',
-          data: Array(labels.length).fill(base),
+          data: entries.map(e => (e.base != null ? e.base : base)),
           borderColor: baseC,
           borderDash: [4, 4],
           pointRadius: 0,
@@ -1713,21 +1820,42 @@ function drawRiskChart(period) {
       onClick: (evt, elements) => {
         const el = elements.find(e => e.datasetIndex === 0) || elements[0];
         if (!el || el.index === 0) return; // "Départ" : point de repère, aucun trade derrière
-        const t = tr[el.index - 1];
+        const e = entries[el.index];
+        // Point d'événement (ajustement manuel / bascule du risque intelligent) : aucun trade derrière →
+        // on ouvre les Paramètres avec l'explication de la modification
+        if (e && e.kind) {
+          openRiskEventInfo(e.evId);
+          return;
+        }
+        const t = e && tr.find(x => x.id === e.id);
         if (t) openTradesListModal('Trade : ' + (t.paire || '—') + ' du ' + (t.date || ''), [t]);
       },
       onHover: (evt, elements) => {
         const real = elements.filter(e => !(e.datasetIndex === 0 && e.index === 0));
         evt.native.target.style.cursor = real.length ? 'pointer' : 'default';
       },
-      plugins: {legend: {display: false}, tooltip: {callbacks: {label: i => ` Risk: ${i.raw}%`}}},
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            label: i => {
+              const e = entries[i.dataIndex];
+              if (e && e.kind === 'adjust')
+                return ` Risk: ${i.raw}% (ajustement manuel ${e.delta > 0 ? '+' : ''}${e.delta}%)`;
+              if (e && e.kind === 'smart')
+                return ` Risk: ${i.raw}% (risque intelligent ${e.on ? 'activé' : 'désactivé'})`;
+              return ` Risk: ${i.raw}%`;
+            }
+          }
+        }
+      },
       scales: {
         x: {grid: {color: grC}, ticks: {color: axC, maxTicksLimit: 10, maxRotation: 0}},
         y: {
           grid: {color: grC},
           ticks: {color: axC, callback: v => v + '%'},
-          suggestedMin: Math.max(0, base - 3),
-          suggestedMax: Math.min(RMAX() + 3, base + 3),
+          suggestedMin: Math.max(0, Math.min(base, ...riskData) - 1),
+          suggestedMax: Math.max(base, ...riskData) + 1,
           title: {display: true, text: 'Risk %', color: axC, font: {size: 9}}
         }
       }
@@ -2097,7 +2225,8 @@ function executeResetAccount() {
     'tj_rm_down_trades',
     'tj_rm_down_pct',
     'tj_rm_down_var_type',
-    'tj_rm_down_var_val'
+    'tj_rm_down_var_val',
+    'tj_rm_events'
   ].forEach(k => localStorage.removeItem(accKey(k)));
   if (typeof cfLoad === 'function') cfLoad();
   if (typeof cfEnsureOrders === 'function') cfEnsureOrders();
@@ -2741,18 +2870,166 @@ function updateNavBadges() {
 }
 
 // ══ MODIFS ══
-function toggleSmartRisk() {
-  const c = SMART();
-  lssAcc('tj_smart_risk', !c);
-  document.getElementById('tglSmart').classList.toggle('on', !c);
-  document.getElementById('smartLbl').textContent = !c ? 'Activé' : 'Désactivé';
-  document.getElementById('riskCard').style.display = !c ? '' : 'none';
+// La carte du graphique Risk Management reste visible tant qu'il existe un historique d'événements de risque
+// (sinon couper le risque intelligent ferait disparaître la courbe passée).
+const rmShowRiskCard = () => true; // le graphique reste toujours visible (risque intelligent actif ou non)
+function rmRefreshAfterChange() {
+  const rc = document.getElementById('riskCard');
+  if (rc) rc.style.display = rmShowRiskCard() ? '' : 'none';
   renderModifs();
   updateNavBadges();
+  updateKPIs();
   refreshAllCharts();
   if (typeof currentUser !== 'undefined' && currentUser && !_isSyncing) {
     schedulePush(300);
   }
+}
+function toggleSmartRisk() {
+  const c = SMART();
+  // On enregistre la bascule dans le journal daté AVANT de changer le mode : l'historique passé
+  // (courbe + RR des anciens trades) reste identique, seul ce qui suit change.
+  rmAddEvent(Object.assign({kind: 'smart', on: !c}, rmNowStamp()));
+  lssAcc('tj_smart_risk', !c);
+  document.getElementById('tglSmart').classList.toggle('on', !c);
+  document.getElementById('smartLbl').textContent = !c ? 'Activé' : 'Désactivé';
+  rmRefreshAfterChange();
+}
+
+// ══ AJUSTEMENT MANUEL DU RISQUE (bouton dans « Risk Management — Réglages ») ══
+let _rmAdjSign = 1;
+function rmFmtDate(d) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || '');
+  return m ? m[3] + '/' + m[2] + '/' + m[1] : d || '';
+}
+function rmAdjSetSign(sg) {
+  _rmAdjSign = sg;
+  document.getElementById('rmAdjAdd').className = 'btn ' + (sg > 0 ? 'btn-p' : 'btn-g');
+  document.getElementById('rmAdjSub').className = 'btn ' + (sg < 0 ? 'btn-p' : 'btn-g');
+  rmAdjPreview();
+}
+function openRmAdjust() {
+  const today = rmNowStamp().date;
+  document.getElementById('rmAdjCur').textContent = fmtRiskPct(getCurrentRiskPct());
+  const v = document.getElementById('rmAdjVal');
+  v.value = '';
+  const d = document.getElementById('rmAdjDate');
+  d.value = today;
+  d.max = today;
+  document.getElementById('rmAdjErr').style.display = 'none';
+  rmAdjSetSign(1);
+  document.getElementById('rmAdjustModal').classList.add('open');
+  setTimeout(() => v.focus(), 50);
+}
+function closeRmAdjust() {
+  document.getElementById('rmAdjustModal').classList.remove('open');
+}
+function rmAdjPreview() {
+  const cur = getCurrentRiskPct();
+  const val = parseFloat(document.getElementById('rmAdjVal').value);
+  const out = document.getElementById('rmAdjPreview');
+  if (!(val > 0)) {
+    out.textContent = '';
+    return;
+  }
+  const next = Math.max(0.01, Math.round((cur + _rmAdjSign * val) * 100) / 100);
+  let txt = fmtRiskPct(cur) + '  →  ' + fmtRiskPct(next);
+  if (next > RMAX()) txt += '  (⚠ au-dessus de ton plafond de ' + RMAX() + '%)';
+  out.textContent = txt;
+}
+function confirmRmAdjust() {
+  const val = parseFloat(document.getElementById('rmAdjVal').value);
+  const err = document.getElementById('rmAdjErr');
+  if (!(val > 0)) {
+    err.textContent = 'Entre un nombre supérieur à 0.';
+    err.style.display = 'block';
+    return;
+  }
+  const now = rmNowStamp();
+  let date = document.getElementById('rmAdjDate').value || now.date;
+  if (date > now.date) date = now.date;
+  const cur = getCurrentRiskPct();
+  if (cur + _rmAdjSign * val < 0.01) {
+    err.textContent = 'Le risque ne peut pas descendre sous 0.01%.';
+    err.style.display = 'block';
+    return;
+  }
+  // Aujourd'hui : horodaté à la minute (les trades déjà passés aujourd'hui gardent l'ancien risque).
+  // Jour passé : prend effet dès le début de ce jour.
+  rmAddEvent({kind: 'adjust', delta: _rmAdjSign * val, date, heure: date === now.date ? now.heure : ''});
+  closeRmAdjust();
+  rmRefreshAfterChange();
+}
+
+// Clic sur un point d'événement du graphique : redirige vers les Paramètres + explication
+let _rmEvId = null;
+function openRiskEventInfo(evId) {
+  const ev = RM_EVENTS().find(e => e.id === evId);
+  if (!ev) return;
+  const hist = computeRiskHistory(true).hist;
+  const i = hist.findIndex(h => h.evId === evId);
+  const after = i >= 0 ? hist[i].rp : null;
+  const before = i > 0 ? hist[i - 1].rp : null;
+  const when = rmFmtDate(ev.date) + (ev.heure ? ' à ' + ev.heure : '');
+  const arrow =
+    before != null && after != null ? ' (de ' + fmtRiskPct(before) + ' à ' + fmtRiskPct(after) + ')' : '';
+  let title, msg;
+  if (ev.kind === 'adjust') {
+    const d = parseFloat(ev.delta) || 0;
+    title = 'Ajustement manuel du risque';
+    msg =
+      'Tu as modifié ton risque toi-même le ' +
+      when +
+      ' : ' +
+      (d > 0 ? '+' : '') +
+      d +
+      '%' +
+      arrow +
+      '. Ce n’est pas un trade, et ta stratégie de risque intelligent n’a pas été modifiée.';
+  } else if (ev.kind === 'config') {
+    title = 'Réglages de risque modifiés';
+    msg =
+      'Tu as modifié tes réglages de risque le ' +
+      when +
+      (ev.prev && ev.cfg && ev.prev.base !== ev.cfg.base
+        ? ' : risque de base de ' + fmtRiskPct(ev.prev.base) + ' à ' + fmtRiskPct(ev.cfg.base)
+        : ' (stratégie de risque intelligent)') +
+      '. Les nouveaux réglages ne s’appliquent qu’à partir de cette date : la courbe et les RR d’avant n’ont pas changé.';
+  } else {
+    title = ev.on ? 'Risque intelligent activé' : 'Risque intelligent désactivé';
+    msg = ev.on
+      ? 'Tu as réactivé le risque intelligent le ' + when + arrow + '.'
+      : 'Tu as désactivé le risque intelligent le ' +
+        when +
+        ' : le risque est passé en fixe' +
+        arrow +
+        '. La courbe d’avant n’a pas été modifiée.';
+  }
+  _rmEvId = ev.kind === 'adjust' ? evId : null;
+  document.getElementById('rmEvTitle').textContent = title;
+  document.getElementById('rmEvMsg').textContent = msg;
+  document.getElementById('rmEvDel').style.display = _rmEvId ? '' : 'none';
+  const navBtn = document.querySelector('button.nav-tab[onclick*="showPage(\'modifs\',this)"]');
+  showPage('modifs', navBtn);
+  document.getElementById('rmEventModal').classList.add('open');
+}
+function closeRmEvent() {
+  document.getElementById('rmEventModal').classList.remove('open');
+}
+function deleteRmEvent() {
+  const id = _rmEvId;
+  closeRmEvent();
+  if (!id) return;
+  showConfirm(
+    'Supprimer l’ajustement ?',
+    'Le risque revient comme si tu n’avais jamais fait cet ajustement (les trades suivants sont recalculés).',
+    () => {
+      lssAcc(
+        'tj_rm_events',
+        RM_EVENTS().filter(e => e.id !== id)
+      );
+      rmRefreshAfterChange();
+    }
+  );
 }
 // Toggle RR Pris auto/manuel, par formulaire ('f' pour ajout, 'e' pour édition)
 function toggleFormRrAuto(prefix) {
@@ -2767,11 +3044,13 @@ function toggleFormRrAuto(prefix) {
   group.style.display = nowOn ? 'none' : '';
 }
 function saveCapitalRisk() {
+  const _rmPrev = rmCfgSnapshot();
   lssAcc('tj_capital', parseFloat(document.getElementById('capInput').value) || 10000);
   const riskVal = parseFloat(document.getElementById('riskInput').value) || 1;
   lssAcc('tj_risk', riskVal);
   const rm = parseFloat(document.getElementById('riskMaxInput').value) || 10;
   lssAcc('tj_risk_max', rm);
+  rmRecordCfgChange(_rmPrev);
   if (typeof currentUser !== 'undefined' && currentUser && !_isSyncing) {
     schedulePush(300);
   }
@@ -2809,6 +3088,7 @@ function loadRmConfigUI() {
   updateRmTriggerUI('down');
 }
 function saveRmConfig() {
+  const _rmPrev = rmCfgSnapshot();
   lssAcc('tj_rm_up_trigger', document.getElementById('rmUpTrigger').value);
   lssAcc('tj_rm_up_trades', parseFloat(document.getElementById('rmUpTradesVal').value) || 3);
   lssAcc('tj_rm_up_pct', parseFloat(document.getElementById('rmUpPctVal').value) || 5);
@@ -2820,6 +3100,7 @@ function saveRmConfig() {
   lssAcc('tj_rm_down_pct', parseFloat(document.getElementById('rmDownPctVal').value) || 5);
   lssAcc('tj_rm_down_var_type', document.getElementById('rmDownVarType').value);
   lssAcc('tj_rm_down_var_val', parseFloat(document.getElementById('rmDownVarVal').value) || 0.5);
+  rmRecordCfgChange(_rmPrev);
 
   if (typeof currentUser !== 'undefined' && currentUser && !_isSyncing) {
     schedulePush(300);
@@ -2882,7 +3163,7 @@ function renderModifs() {
   const smart = SMART();
   document.getElementById('tglSmart').classList.toggle('on', smart);
   document.getElementById('smartLbl').textContent = smart ? 'Activé' : 'Désactivé';
-  document.getElementById('riskCard').style.display = smart ? '' : 'none';
+  document.getElementById('riskCard').style.display = rmShowRiskCard() ? '' : 'none';
   const {finalRp, finalRealWs, finalRealLs} = computeRiskHistory();
   document.getElementById('disp0').textContent = getCurrentCap().toLocaleString('fr-FR') + '€';
   document.getElementById('disp1').textContent = fmtRiskPct(finalRp);
@@ -4594,6 +4875,24 @@ function buildTV() {
       page: 'Paramètres',
       section: 'Risk Management (réglages)'
     },
+    {
+      v: '--rm-adjust-btn-background',
+      l: 'Bouton « Ajuster le risque » — fond',
+      page: 'Paramètres',
+      section: 'Risk Management (réglages)'
+    },
+    {
+      v: '--rm-adjust-btn-border',
+      l: 'Bouton « Ajuster le risque » — bordure',
+      page: 'Paramètres',
+      section: 'Risk Management (réglages)'
+    },
+    {
+      v: '--rm-adjust-btn-color',
+      l: 'Bouton « Ajuster le risque » — texte',
+      page: 'Paramètres',
+      section: 'Risk Management (réglages)'
+    },
     {v: '--tgl-off', l: 'Toggle off', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-on', l: 'Toggle on', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-thumb', l: 'Toggle rond', page: 'Paramètres', section: 'Interrupteurs'},
@@ -5828,7 +6127,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const smart = SMART();
   document.getElementById('tglSmart').classList.toggle('on', smart);
   document.getElementById('smartLbl').textContent = smart ? 'Activé' : 'Désactivé';
-  document.getElementById('riskCard').style.display = smart ? '' : 'none';
+  document.getElementById('riskCard').style.display = rmShowRiskCard() ? '' : 'none';
   // Toggle RR Pris auto : toujours activé (ON) au chargement initial
   const fTgl = document.getElementById('f-tglRrAuto');
   if (fTgl) {

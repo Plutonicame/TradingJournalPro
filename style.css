@@ -147,6 +147,9 @@
   --pc-positif: #00e5a0;
   --pc-negatif: #ef4444;
   --rm-up-border: #00e5a0;
+  --rm-adjust-btn-background: #1b2030;
+  --rm-adjust-btn-border: #f6bd4f;
+  --rm-adjust-btn-color: #f6bd4f;
   --rm-up-text: #00e5a0;
   --rm-down-border: #ef4444;
   --rm-down-text: #ef4444;
@@ -2762,3 +2765,19 @@ body.cf-mode-phone #editModal .cp-modal > div:last-child { gap: 6px; }
 /* Zone Notes : la largeur ne change plus quand la barre de défilement de la
    fenêtre apparaît (sinon le texte se re-découpe et la fin est masquée). */
 #editModal .cp-modal { scrollbar-gutter: stable; }
+
+/* Bouton « Ajuster le risque » (en-tête de Risk Management — Réglages) : fond / bordure / texte pilotés par des variables de thème */
+.rm-adjust-btn {
+  background: var(--rm-adjust-btn-background);
+  border: 1px solid var(--rm-adjust-btn-border);
+  border-radius: 6px;
+  color: var(--rm-adjust-btn-color);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  padding: 5px 12px;
+}
+.rm-adjust-btn:hover {
+  filter: brightness(1.15);
+}
