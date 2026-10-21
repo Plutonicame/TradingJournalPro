@@ -357,6 +357,11 @@
   --confirm-box-border: #1e2d45;
   --confirm-box-h3-color: #e2e8f0;
   --confirm-box-p-color: #64748b;
+  --cf-link-background: #111827;
+  --cf-link-border: #1e2d45;
+  --cf-link-title: #e2e8f0;
+  --cf-link-text: #64748b;
+  --cf-link-list-text: #e2e8f0;
   --alert-color: #00e5a0;
   --footer-color: #64748b;
 }
@@ -2781,4 +2786,20 @@ body.cf-mode-phone #editModal .cp-modal > div:last-child { gap: 6px; }
 }
 .rm-adjust-btn:hover {
   filter: brightness(1.15);
+}
+
+/* Fenêtre « Autoriser Cashflow Tracker » (cashflow-link.js) : couleurs pilotées par des variables de thème */
+#cfLinkModal .confirm-box {
+  background: var(--cf-link-background);
+  border: 1px solid var(--cf-link-border);
+}
+#cfLinkModal .confirm-box h3 {
+  color: var(--cf-link-title);
+}
+#cfLinkModal .confirm-box p {
+  color: var(--cf-link-text);
+}
+#cfLinkModal #cfAccList,
+#cfLinkModal #cfAccList label {
+  color: var(--cf-link-list-text);
 }

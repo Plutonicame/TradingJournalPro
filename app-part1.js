@@ -4956,6 +4956,11 @@ function buildTV() {
       page: 'Paramètres',
       section: 'Risk Management (réglages)'
     },
+    {v: '--cf-link-background', l: 'Fond', page: 'Paramètres', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-border', l: 'Bordure', page: 'Paramètres', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-title', l: 'Titre', page: 'Paramètres', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-text', l: 'Texte', page: 'Paramètres', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-list-text', l: 'Liste des sous-comptes', page: 'Paramètres', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--tgl-off', l: 'Toggle off', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-on', l: 'Toggle on', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-thumb', l: 'Toggle rond', page: 'Paramètres', section: 'Interrupteurs'},
