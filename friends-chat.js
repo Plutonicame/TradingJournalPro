@@ -225,7 +225,7 @@ const FC_CSS = `
 .fc-trade-chip{font-size:9px;padding:2px 6px;border-radius:3px;background:var(--fc-trade-chip-bg,var(--surface));border:1px solid var(--border);color:var(--muted);}
 .fc-trade-notes{margin-top:6px;font-size:10px;color:var(--muted);font-style:italic;white-space:pre-wrap;}
 .fc-trade-imgs{display:flex;gap:4px;margin-top:6px;flex-wrap:wrap;}
-.fc-trade-imgs img{width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:zoom-in;border:1px solid var(--border);}
+.fc-trade-imgs img{width:44px;height:34px;object-fit:cover;border-radius:4px;cursor:zoom-in;border:1px solid var(--fc-trade-img-border,var(--border));}
 /* Zone de la fiche de trade partagée +50% par rapport à la largeur de base
    (220px → 330px) sur les 3 modes PC (normal, vertical, ultrawide) — le
    contenu à l'intérieur (texte, badges, chips, notes, images) reste à sa
@@ -2155,6 +2155,7 @@ const FC_THEME_DEFAULTS = {
   '--fc-trade-pos-color': '#00e5a0',
   '--fc-trade-neg-color': '#ef4444',
   '--fc-trade-chip-bg': '#111827',
+  '--fc-trade-img-border': '#1e2d45',
   '--fc-react-trigger-bg': '#111827',
   '--fc-react-badge-bg': '#161d2e',
   '--fc-unread-dot-color': '#ef4444',
@@ -2262,6 +2263,12 @@ function fcBuildThemeVars() {
     {
       v: '--fc-trade-chip-bg',
       l: 'Étiquettes (TF / confluences)',
+      page: 'Ami',
+      section: 'Fiche de trade partagée',
+    },
+    {
+      v: '--fc-trade-img-border',
+      l: 'Bordure des miniatures (images du trade)',
       page: 'Ami',
       section: 'Fiche de trade partagée',
     },

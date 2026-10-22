@@ -4534,6 +4534,12 @@ function buildTV() {
     },
     {v: '--auth-input-bg', l: 'Champ email fond', page: 'Connexion', section: 'Écran de connexion'},
     {
+      v: '--auth-input-filled-bg',
+      l: 'Champ email rempli (avec du texte) fond',
+      page: 'Connexion',
+      section: 'Écran de connexion'
+    },
+    {
       v: '--auth-input-bd',
       l: 'Champ email bordure',
       page: 'Connexion',
@@ -4962,6 +4968,7 @@ function buildTV() {
     {v: '--cf-link-text', l: 'Texte', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--cf-link-list-text', l: 'Liste des sous-comptes', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--cf-link-check', l: 'Case cochée (couleur autour de la coche)', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
+    {v: '--cf-link-zone-bg', l: 'Fond de la zone de texte (explication + sous-comptes)', page: 'Connexion', section: 'Fenêtre « Autoriser » (Cashflow Tracker)'},
     {v: '--tgl-off', l: 'Toggle off', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-on', l: 'Toggle on', page: 'Paramètres', section: 'Interrupteurs'},
     {v: '--tgl-thumb', l: 'Toggle rond', page: 'Paramètres', section: 'Interrupteurs'},

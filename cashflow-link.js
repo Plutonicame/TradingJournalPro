@@ -105,8 +105,8 @@
         ? '<div style="background:#e11d48;color:#fff;font:700 10px monospace;text-align:center;padding:4px;margin:-8px -8px 12px;border-radius:4px;">SIMULATION — rien n’est envoyé ni créé</div>'
         : '') +
       '<h3>AUTORISER « ' + esc(req.label).toUpperCase() + ' »</h3>' +
-      '<p style="text-align:left;">Cette application recevra uniquement le <strong>P&amp;L</strong> (montant et date de chaque trade, <strong>hors backtest</strong>) des sous-comptes que tu coches. Aucune autre donnée de trade n’est partagée.</p>' +
-      '<div id="cfAccList" style="margin:0 0 10px;font-size:12px;color:var(--muted);">Chargement de tes sous-comptes…</div>' +
+      '<div id="cfZone"><p style="text-align:left;">Cette application recevra uniquement le <strong>P&amp;L</strong> (montant et date de chaque trade, <strong>hors backtest</strong>) des sous-comptes que tu coches. Aucune autre donnée de trade n’est partagée.</p>' +
+      '<div id="cfAccList" style="margin:0;font-size:12px;color:var(--muted);">Chargement de tes sous-comptes…</div></div>' +
       '<p id="cfErr" style="display:none;color:var(--red);"></p>' +
       '<div class="btn-row"><button class="btn btn-g" id="cfDeny">REFUSER</button><button class="btn btn-p" id="cfOk" disabled>AUTORISER</button></div></div>';
     document.body.appendChild(m);
@@ -226,7 +226,11 @@
       '<div class="card-header"><div class="card-title">APPLICATIONS LIÉES</div></div>' +
       '<div class="card-body"><div style="font-size:11px;color:var(--muted);margin-bottom:10px;">Applications autorisées à recevoir le P&amp;L (hors backtest) de tes sous-comptes. Révoquer coupe l’accès immédiatement.</div>' +
       '<div id="cfLinksList" style="font-size:12px;">…</div></div>';
-    page.appendChild(card);
+    // Placée entre « CAPITAL & RISK » et « RISK MANAGEMENT — RÉGLAGES » (repérées via leur data-tvar)
+    var capT = document.querySelector('[data-tvar="--crt-capitalrisk"]');
+    var capCard = capT && capT.closest('.card');
+    if (capCard && capCard.parentNode) capCard.parentNode.insertBefore(card, capCard.nextSibling);
+    else page.appendChild(card);
     return card;
   }
   async function renderLinks() {

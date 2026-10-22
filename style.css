@@ -76,6 +76,7 @@
   --auth-btn-tx: #fff;
   --auth-input-bg: #111827;
   --auth-input-bd: #1e2d45;
+  --auth-input-filled-bg: var(--auth-input-bg);
   --pin-btn-bg: #111827;
   --pin-btn-bd: #1e2d45;
   --pin-btn-tx: #e2e8f0;
@@ -363,6 +364,7 @@
   --cf-link-text: #64748b;
   --cf-link-list-text: #e2e8f0;
   --cf-link-check: #3b82f6;
+  --cf-link-zone-bg: #111827;
   --alert-color: #00e5a0;
   --footer-color: #64748b;
 }
@@ -2844,4 +2846,30 @@ body.cf-mode-phone #editModal .cp-modal > div:last-child { gap: 6px; }
 }
 #cfLinkModal .cfAcc {
   accent-color: var(--cf-link-check);
+}
+#cfLinkModal #cfZone {
+  background: var(--cf-link-zone-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+#cfLinkModal #cfZone p {
+  margin-bottom: 8px;
+}
+
+/* Champ e-mail de l'écran de connexion : fond quand il contient du texte (saisi ou rempli automatiquement par le
+   navigateur, qui le colore sinon en bleu/jaune). Par défaut = même fond que le champ vide ; réglable dans
+   Thème → Connexion → « Champ email rempli ». */
+#returnEmail:not(:placeholder-shown) {
+  background: var(--auth-input-filled-bg) !important;
+}
+#returnEmail:-webkit-autofill,
+#returnEmail:-webkit-autofill:hover,
+#returnEmail:-webkit-autofill:focus,
+#returnEmail:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--auth-input-filled-bg) inset !important;
+  box-shadow: 0 0 0 1000px var(--auth-input-filled-bg) inset !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+  caret-color: #e2e8f0;
+  transition: background-color 9999s ease-in-out 0s;
 }
