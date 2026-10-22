@@ -869,6 +869,44 @@ body.pencil-mode [data-editable]:hover {
   text-transform: uppercase;
   color: var(--fg-label-color);
 }
+/* ══ STYLE PAR DÉFAUT DE TOUS LES CHAMPS À REMPLIR ══
+   Même design que les champs du Journal de trading (.fg) pour tout champ, liste déroulante ou zone de texte
+   qui n'a pas son propre design (fenêtres, réglages, etc.). :where() = priorité zéro : tout champ qui a déjà
+   son style (.fg, .mod-add, barre de chat…) le garde. Les couleurs viennent des mêmes variables de thème. */
+:where(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='button']):not([type='submit']),
+    select,
+    textarea
+  ) {
+  background-color: var(--fg-input-fg-select-fg-textarea-background);
+  border: 1px solid var(--fg-input-fg-select-fg-textarea-border);
+  border-radius: 5px;
+  color: var(--fg-input-fg-select-fg-textarea-color);
+  color-scheme: dark;
+  font-family: var(--sans);
+  padding: 7px 9px;
+  transition: border-color 0.15s;
+}
+:where(
+    input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']):not([type='button']):not([type='submit']),
+    select,
+    textarea
+  ):focus {
+  outline: none;
+  border-color: var(--fg-input-focus-fg-select-focus-fg-t-bordercolo);
+}
+:where(select) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Cpath fill='%2364748b' d='M5 7L0 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 22px;
+  cursor: pointer;
+  appearance: none;
+}
+:where(select) option {
+  background: var(--fg-select-option-background);
+  color: var(--fg-input-fg-select-fg-textarea-color);
+}
 .fg input,
 .fg select,
 .fg textarea {

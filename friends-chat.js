@@ -997,7 +997,7 @@ function fcBuildTradeCardHtml(t) {
           : ''
       }
       ${t.notes ? `<div class="fc-trade-notes">${fcEsc(t.notes)}</div>` : ''}
-      ${imgs.length ? `<div class="fc-trade-imgs">${imgs.map((src) => `<img src="${fcEsc(src)}" onclick="openFullscreen(this.src)">`).join('')}</div>` : ''}
+      ${imgs.length ? `<div class="fc-trade-imgs">${imgs.map((src) => `<img src="${fcEsc(src)}" onclick="fcOpenTradeImg(this)">`).join('')}</div>` : ''}
     </div>
   </div>`;
 }
@@ -1045,6 +1045,15 @@ function fcRenderMessageRow(m, me) {
 }
 // Clic sur le bandeau d'un trade partagé (paire · direction · gain) : affiche son
 // graphique (capture jointe) en grand, centré, avec de la marge sur les côtés.
+// Clic sur une miniature d'un trade partagé : même visionneuse que dans « Modifier le trade »
+// (toutes les images du trade en galerie : bandeau de miniatures + flèches pour passer de l'une à l'autre).
+function fcOpenTradeImg(imgEl) {
+  const wrap = imgEl.closest('.fc-trade-imgs');
+  const imgs = wrap ? Array.from(wrap.querySelectorAll('img')) : [imgEl];
+  const srcs = imgs.map((i) => i.src);
+  const idx = Math.max(0, imgs.indexOf(imgEl));
+  if (typeof openFullscreen === 'function') openFullscreen(srcs[idx], srcs, idx);
+}
 function fcOpenTradeCardImages(headEl) {
   const card = headEl.closest('.fc-trade-card');
   if (!card) return;

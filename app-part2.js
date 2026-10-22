@@ -2752,7 +2752,14 @@ function pcSanitizeChatHtml(html) {
 // zoomable existant (openFullscreen).
 document.addEventListener('click', e => {
   const img = e.target.closest('.pc-msg-img');
-  if (img) openFullscreen(img.src);
+  if (!img) return;
+  // Miniatures d'une fiche de trade : galerie complète (flèches + bandeau), comme dans « Modifier le trade »
+  const wrap = img.closest('.fc-trade-imgs');
+  if (wrap) {
+    const imgs = Array.from(wrap.querySelectorAll('.pc-msg-img'));
+    const srcs = imgs.map(i => i.src);
+    openFullscreen(img.src, srcs, Math.max(0, imgs.indexOf(img)));
+  } else openFullscreen(img.src);
 });
 
 // Construit le HTML (sûr pour pcSanitizeChatHtml) des miniatures à afficher sous
