@@ -18,7 +18,8 @@
 (function () {
   'use strict';
 
-  var COLORS = ['#8b9bff', '#34d399', '#fb7185', '#f6bd4f', '#56b9f2', '#b79cf7', '#f283b6', '#3fd0d8', '#f79a5b', '#ffffff'];
+  var COLORS = ['#ff1744', '#ff9100', '#ffea00', '#00e676', '#00b0ff', '#2979ff', '#d500f9', '#ff4081', '#1de9b6', '#76ff03', '#ffd600', '#ff3d00'];
+  var dpr = 1;
   var canvas = null,
     ctx = null,
     parts = [],
@@ -43,10 +44,9 @@
   }
   function resize() {
     if (!canvas) return;
-    var d = window.devicePixelRatio || 1;
-    canvas.width = Math.round(window.innerWidth * d);
-    canvas.height = Math.round(window.innerHeight * d);
-    ctx.setTransform(d, 0, 0, d, 0, 0);
+    dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
   }
 
   function makePart(x, y, vx, vy) {
@@ -83,16 +83,16 @@
     var r = b.getBoundingClientRect();
     var x = r.left + r.width / 2,
       y = r.top + r.height / 2;
-    for (var i = 0; i < 28; i++) {
+    for (var i = 0; i < 300; i++) {
       var a = rnd(0, 6.28),
-        s = rnd(120, 340);
+        s = rnd(120, 520);
       parts.push(makePart(x, y, Math.cos(a) * s, Math.sin(a) * s - 120));
     }
   }
 
   function curtain(now) {
     // Fait pleuvoir des confettis depuis le haut sur toute la largeur
-    var n = 3 + ((Math.random() * 3) | 0);
+    var n = 35 + ((Math.random() * 20) | 0);
     for (var i = 0; i < n; i++) {
       var p = makePart(rnd(0, window.innerWidth), rnd(-30, -5), rnd(-30, 30), rnd(60, 160));
       p.drag = 0.998;
@@ -106,7 +106,8 @@
     lastT = t;
     var W = window.innerWidth,
       H = window.innerHeight;
-    ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (t < curtainUntil && t >= curtainNext) {
       curtain(t);
@@ -129,20 +130,21 @@
         continue;
       }
       var fade = p.life > p.max - 0.8 ? Math.max(0, (p.max - p.life) / 0.8) : 1;
-      ctx.save();
+      // Matrice directe (plus rapide que save/restore avec des milliers de pièces)
+      var c = Math.cos(p.rot) * dpr,
+        s = Math.sin(p.rot) * dpr,
+        k = Math.cos(p.tilt); // effet « papier qui tourne »
+      ctx.setTransform(c, s, -s * k, c * k, p.x * dpr, p.y * dpr);
       ctx.globalAlpha = fade;
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rot);
-      ctx.scale(1, Math.cos(p.tilt)); // effet « papier qui tourne »
       ctx.fillStyle = p.color;
       ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
-      ctx.restore();
     }
 
     if (parts.length || t < curtainUntil) raf = requestAnimationFrame(frame);
     else {
       raf = null;
-      ctx.clearRect(0, 0, W, H);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
     }
   }
 
@@ -214,23 +216,26 @@
     var power = Math.min(1100, Math.max(700, H * 1.05));
 
     // Canons bas-gauche et bas-droit, vers le centre et le haut
-    cannon(0, H, 62, 22, 90, power);
-    cannon(W, H, 118, 22, 90, power);
-    // Deuxième salve légèrement décalée
+    cannon(0, H, 62, 24, 900, power);
+    cannon(W, H, 118, 24, 900, power);
+    // Salves suivantes, décalées, pour un feu d'artifice continu
     setTimeout(function () {
-      cannon(0, H, 55, 25, 55, power * 0.85);
-      cannon(W, H, 125, 25, 55, power * 0.85);
-    }, 220);
+      cannon(0, H, 55, 28, 600, power * 0.9);
+      cannon(W, H, 125, 28, 600, power * 0.9);
+    }, 250);
+    setTimeout(function () {
+      cannon(0, H, 70, 20, 500, power * 1.05);
+      cannon(W, H, 110, 20, 500, power * 1.05);
+    }, 600);
 
     burstAtButton();
 
     // Rideau qui tombe pendant ~2,5 s
     var now = performance.now();
-    curtainUntil = now + 2500;
-    curtainNext = now + 350;
+    curtainUntil = now + 2800;
+    curtainNext = now + 300;
 
     startLoop();
-    applause(3.8);
   }
 
   // ── Enveloppe de addPayout ──
