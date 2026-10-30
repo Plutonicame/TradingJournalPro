@@ -49,7 +49,8 @@
     // listes Heures / Minutes de la fenêtre d'heure (couleurs = calendrier de période)
     '.dtc-cols{display:flex;gap:8px;}.dtc-col{flex:1;min-width:0;}' +
     '.dtc-list{max-height:182px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;position:relative;' +
-    'scrollbar-width:thin;scrollbar-color:var(--pcal-bd,#1e2d45) transparent;}' +
+    'scrollbar-width:none;-ms-overflow-style:none;}' +
+    '.dtc-list::-webkit-scrollbar{display:none;width:0;height:0;}' +
     '.dtc-list .pcal-day{flex:none;width:100%;}';
 
   function injectCss() {
@@ -241,9 +242,28 @@
         }
       }
       var copyH = count * STEP;
+      // Effet de roue : plus une case est loin du centre, plus elle s'éloigne
+      // (réduite, pivotée, estompée), comme sur un cylindre qui tourne.
+      function wheelFx() {
+        var H = list.clientHeight || 182;
+        var mid = list.scrollTop + H / 2;
+        var from = Math.max(0, Math.floor(list.scrollTop / STEP) - 1);
+        var to = Math.min(list.children.length - 1, Math.ceil((list.scrollTop + H) / STEP) + 1);
+        for (var i = from; i <= to; i++) {
+          var d = (i * STEP + 13 - mid) / (H / 2); // -1 (haut) … 0 (centre) … 1 (bas)
+          if (d > 1.2) d = 1.2;
+          else if (d < -1.2) d = -1.2;
+          var a = Math.abs(d);
+          var st = list.children[i].style;
+          st.transform = 'perspective(260px) rotateX(' + (-d * 58).toFixed(1) + 'deg) scale(' + (1 - 0.28 * a).toFixed(3) + ')';
+          st.opacity = Math.max(0.12, 1 - 0.85 * a * a).toFixed(2);
+        }
+      }
+      list._fx = wheelFx;
       list.addEventListener('scroll', function () {
         if (list.scrollTop < copyH) list.scrollTop += copyH;
         else if (list.scrollTop >= 2 * copyH) list.scrollTop -= copyH;
+        wheelFx();
       });
       col.appendChild(list);
       cols.appendChild(col);
@@ -270,6 +290,7 @@
       var v = c ? parseInt(c[k], 10) : k === 'h' ? now.getHours() : now.getMinutes();
       var list = lists[k];
       list.scrollTop = counts[k] * STEP + v * STEP - (list.clientHeight - 26) / 2;
+      list._fx();
     }
     return function scrollToSel() {
       center('h');
