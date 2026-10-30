@@ -208,35 +208,47 @@
     }
     var now = new Date();
     var cols = mk('div', 'dtc-cols');
-    var lists = {};
+    var lists = {}, counts = {};
+    var STEP = 28; // hauteur d'une case (26) + espace (2)
     function column(key, label, count, nowVal) {
       var col = mk('div', 'dtc-col');
       col.appendChild(mk('div', 'pcal-wd', label));
       var list = mk('div', 'dtc-list');
-      for (var v = 0; v < count; v++) {
-        var t = p2(v);
-        var b = mk('button', 'pcal-day' + (t === nowVal ? ' today' : ''), t);
-        b.dataset.v = t;
-        b.addEventListener(
-          'click',
-          (function (val) {
-            return function () {
-              var c = cur();
-              if (key === 'h') {
-                setValue(inp, val + ':' + (c ? c.m : '00'));
-                mark();
-              } else {
-                setValue(inp, (c ? c.h : p2(now.getHours())) + ':' + val);
-                closePop();
-              }
-            };
-          })(t)
-        );
-        list.appendChild(b);
+      // Liste en BOUCLE : 3 copies bout à bout ; quand on sort de la copie du
+      // milieu, on saute d'une copie (invisible) → 23 → 00 et 59 → 00 sans fin.
+      for (var rep3 = 0; rep3 < 3; rep3++) {
+        for (var v = 0; v < count; v++) {
+          var t = p2(v);
+          var b = mk('button', 'pcal-day' + (t === nowVal ? ' today' : ''), t);
+          b.dataset.v = t;
+          b.addEventListener(
+            'click',
+            (function (val) {
+              return function () {
+                var c = cur();
+                if (key === 'h') {
+                  setValue(inp, val + ':' + (c ? c.m : '00'));
+                  mark();
+                  center('h');
+                } else {
+                  setValue(inp, (c ? c.h : p2(now.getHours())) + ':' + val);
+                  closePop();
+                }
+              };
+            })(t)
+          );
+          list.appendChild(b);
+        }
       }
+      var copyH = count * STEP;
+      list.addEventListener('scroll', function () {
+        if (list.scrollTop < copyH) list.scrollTop += copyH;
+        else if (list.scrollTop >= 2 * copyH) list.scrollTop -= copyH;
+      });
       col.appendChild(list);
       cols.appendChild(col);
       lists[key] = list;
+      counts[key] = count;
     }
     column('h', 'Heures', 24, p2(now.getHours()));
     column('m', 'Minutes', 60, p2(now.getMinutes()));
@@ -252,11 +264,16 @@
       });
     }
     mark();
+    // Place la valeur choisie (ou l'heure actuelle) au milieu de la copie centrale
+    function center(k) {
+      var c = cur();
+      var v = c ? parseInt(c[k], 10) : k === 'h' ? now.getHours() : now.getMinutes();
+      var list = lists[k];
+      list.scrollTop = counts[k] * STEP + v * STEP - (list.clientHeight - 26) / 2;
+    }
     return function scrollToSel() {
-      ['h', 'm'].forEach(function (k) {
-        var s = lists[k].querySelector('.sel') || lists[k].querySelector('.today');
-        if (s) lists[k].scrollTop = Math.max(0, s.offsetTop - lists[k].offsetTop - 52);
-      });
+      center('h');
+      center('m');
     };
   }
 
