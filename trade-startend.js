@@ -3,7 +3,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 // Remplace l'affichage « Date » + « Heure » du formulaire de trade (nouveau
 // trade ET fenêtre de modification) par deux cases : « Début » et « Fin ».
-// Chaque case contient, à gauche, un bouton calendrier et un bouton horloge :
+// Chaque case contient, à droite, un bouton calendrier et un bouton horloge (la valeur s'affiche à gauche) :
 //   • 1er clic sur 📅 → affiche la date choisie dans l'espace restant ;
 //     2e clic → ouvre le sélecteur de date pour la modifier.
 //   • 1er clic sur 🕐 → affiche l'heure choisie ; 2e clic → ouvre le
@@ -12,6 +12,8 @@
 // mêmes id qu'avant) : toute la logique existante continue de les lire.
 // La case garde exactement la taille des autres champs (un champ invisible
 // de même style fixe sa hauteur).
+// Couleur du bouton actif : réglable dans Thème → Général → Champs de formulaire
+// (variable --fg-dtc-btn-active).
 // Pour supprimer : retirer la balise <script src="trade-startend.js"> (et
 // remettre l'ancien HTML Date/Heure).
 // ═══════════════════════════════════════════════════════════════════════
@@ -25,6 +27,7 @@
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.4V8l2.4 1.6"/></svg>';
 
   var css =
+    ':root{--fg-dtc-btn-active:#8b9bff;}' +
     '.dtc{position:relative;width:100%;}' +
     // champs réels : invisibles, mais ils fixent la taille de la case
     '.dtc .dtc-time{opacity:0;pointer-events:none;display:block;}' +
@@ -37,10 +40,10 @@
     '.dtc-b{all:unset;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:none;' +
     'width:18px;height:18px;cursor:pointer;color:var(--muted,#64748b);border-radius:4px;transition:color .15s;}' +
     '.dtc-b:hover{color:var(--text,#e2e8f0);}' +
-    '.dtc-b.on{color:#00e5a0;}' +
-    '.dtc-b:focus-visible{outline:1px solid #00e5a0;}' +
+    '.dtc-b.on{color:var(--fg-dtc-btn-active,#8b9bff);}' +
+    '.dtc-b:focus-visible{outline:1px solid var(--fg-dtc-btn-active,#8b9bff);}' +
     '.dtc-v{flex:1;min-width:0;font-size:12px;font-family:var(--mono,monospace);white-space:nowrap;overflow:hidden;' +
-    'text-overflow:ellipsis;text-align:right;color:var(--fg-input-fg-select-fg-textarea-color,#e2e8f0);}' +
+    'text-overflow:ellipsis;text-align:left;color:var(--fg-input-fg-select-fg-textarea-color,#e2e8f0);}' +
     '.dtc-v:empty::before{content:"";}';
 
   function injectCss() {
@@ -80,9 +83,9 @@
     var ui = document.createElement('div');
     ui.className = 'dtc-ui';
     ui.innerHTML =
+      '<span class="dtc-v"></span>' +
       '<button type="button" class="dtc-b" data-k="date" title="Date" aria-label="Date">' + ICON_CAL + '</button>' +
-      '<button type="button" class="dtc-b" data-k="time" title="Heure" aria-label="Heure">' + ICON_CLK + '</button>' +
-      '<span class="dtc-v"></span>';
+      '<button type="button" class="dtc-b" data-k="time" title="Heure" aria-label="Heure">' + ICON_CLK + '</button>';
     box.appendChild(ui);
 
     var bD = ui.querySelector('[data-k="date"]');

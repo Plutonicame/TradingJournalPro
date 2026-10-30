@@ -3244,6 +3244,8 @@ function iaSendTradeMessage(tradeId) {
     id: t.id,
     date: t.date || '',
     heure: t.heure || '',
+    dateFin: t.dateFin || '',
+    heureFin: t.heureFin || '',
     session: t.session || '',
     paire: t.paire || '',
     dir: t.dir || '',

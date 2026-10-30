@@ -979,7 +979,8 @@ function fcBuildTradeCardHtml(t) {
       <span style="color:${resColor};font-weight:700;">${fcEsc(resTxt)}</span>
     </div>
     <div class="fc-trade-card-body">
-      <div class="fc-trade-row"><span>Date</span><span>${fcEsc(t.date || '—')}${t.heure ? ' ' + fcEsc(t.heure) : ''}</span></div>
+      <div class="fc-trade-row"><span>Début</span><span>${fcEsc(t.date || '—')}${t.heure ? ' ' + fcEsc(t.heure) : ''}</span></div>
+      ${t.dateFin || t.heureFin ? `<div class="fc-trade-row"><span>Fin</span><span>${fcEsc(t.dateFin || '—')}${t.heureFin ? ' ' + fcEsc(t.heureFin) : ''}</span></div>` : ''}
       ${t.session ? `<div class="fc-trade-row"><span>Session</span><span>${fcEsc(t.session)}</span></div>` : ''}
       ${capTxt ? `<div class="fc-trade-row"><span>Compte</span><span>${fcEsc(capTxt)}</span></div>` : ''}
       ${t.rrCible ? `<div class="fc-trade-row"><span>RR Visé</span><span>${fcEsc(String(t.rrCible))}R</span></div>` : ''}
@@ -1652,6 +1653,8 @@ function fcSendTradeMessage(tradeId) {
     id: t.id,
     date: t.date || '',
     heure: t.heure || '',
+    dateFin: t.dateFin || '',
+    heureFin: t.heureFin || '',
     session: t.session || '',
     paire: t.paire || '',
     dir: t.dir || '',

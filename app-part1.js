@@ -2812,6 +2812,8 @@ function renderTable() {
       return `<tr>
     <td style="font-family:var(--mono);white-space:nowrap"><button class="del-btn" style="margin-right:8px" onclick="openEditTrade(${t.id})" title="Modifier">✎</button>${escapeHtml(t.date) || '—'}</td>
     <td style="font-family:var(--mono)">${escapeHtml(t.heure) || '—'}</td>
+    <td style="font-family:var(--mono);white-space:nowrap">${escapeHtml(t.dateFin) || '—'}</td>
+    <td style="font-family:var(--mono)">${escapeHtml(t.heureFin) || '—'}</td>
     <td style="color:var(--muted)">${escapeHtml(t.session) || '—'}</td>
     <td><strong>${escapeHtml(t.paire) || '—'}</strong>${t.backtest ? '&nbsp;<span style="font-size:11px;line-height:1;padding:1px 3px;background:var(--bt-bg);color:var(--bt-tx);border-radius:3px;font-family:var(--mono);display:inline-block;">BT</span>' : ''}</td>
     <td>${tagD(t.dir)}</td>
@@ -5253,6 +5255,12 @@ function buildTV() {
     {
       v: '--fg-input-focus-fg-select-focus-fg-t-bordercolo',
       l: '.fg input:focus,.fg select:focus,.fg textarea:focus — bordure',
+      page: 'Général',
+      section: 'Champs de formulaire'
+    },
+    {
+      v: '--fg-dtc-btn-active',
+      l: 'Début/Fin — bouton calendrier / horloge sélectionné',
       page: 'Général',
       section: 'Champs de formulaire'
     },

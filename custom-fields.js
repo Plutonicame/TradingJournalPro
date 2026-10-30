@@ -27,8 +27,10 @@
 
 // ── Référentiels des éléments natifs (pour les ancrages de position) ──
 const CF_BUILTIN_COLS = [
-  {id: 'date', label: 'Date'},
-  {id: 'heure', label: 'Heure'},
+  {id: 'date', label: 'Date début'},
+  {id: 'heure', label: 'Heure début'},
+  {id: 'datefin', label: 'Date fin'},
+  {id: 'heurefin', label: 'Heure fin'},
   {id: 'session', label: 'Session'},
   {id: 'paire', label: 'Paire'},
   {id: 'dir', label: 'Dir.'},
@@ -44,8 +46,10 @@ const CF_BUILTIN_COLS = [
   {id: 'img', label: '📷'}
 ];
 const CF_BUILTIN_FORM_ANCHORS = [
-  {id: 'date', label: 'Date'},
-  {id: 'heure', label: 'Heure'},
+  // Depuis la case « Début / Fin » (trade-startend.js) : 'date' = case Début,
+  // 'heure' = case Fin (ids conservés pour ne pas casser les ordres déjà enregistrés).
+  {id: 'date', label: 'Début'},
+  {id: 'heure', label: 'Fin'},
   {id: 'session', label: 'Session'},
   {id: 'paire', label: 'Paire / Actif'},
   {id: 'dir', label: 'Direction'},
@@ -239,6 +243,13 @@ function cfRemoveLineBreak(id) {
 }
 function cfEnsureOrders() {
   if (!APP.cfColOrder) APP.cfColOrder = CF_BUILTIN_COLS.map(c => c.id);
+  // Colonne native ajoutée après coup (ex: Date fin / Heure fin) : on l'insère
+  // juste après la colonne native qui la précède, dans un ordre déjà personnalisé.
+  CF_BUILTIN_COLS.forEach((c, i) => {
+    if (APP.cfColOrder.includes(c.id)) return;
+    const prev = i > 0 ? APP.cfColOrder.indexOf(CF_BUILTIN_COLS[i - 1].id) : -1;
+    APP.cfColOrder.splice(prev + 1, 0, c.id);
+  });
   if (!APP.cfKpiOrder) APP.cfKpiOrder = CF_BUILTIN_KPIS.map(k => k.id);
   // Ordre des QUESTIONS du formulaire "nouveau trade" (18/09/2026, demande
   // de Paul) : questions natives et personnalisées librement mélangeables
@@ -520,7 +531,8 @@ function cfBuiltinAnchorEl(prefix, anchorId) {
   if (anchorId === 'images') {
     return document.getElementById(prefix + '-images-block');
   }
-  const inp = document.getElementById(prefix + '-' + anchorId);
+  // 'heure' désigne désormais la case « Fin » (champs *-date-fin / *-heure-fin)
+  const inp = document.getElementById(prefix + '-' + (anchorId === 'heure' ? 'date-fin' : anchorId));
   return inp ? inp.closest('.fg') : null;
 }
 function cfInjectFormFields(prefix) {
