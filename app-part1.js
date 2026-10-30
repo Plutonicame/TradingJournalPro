@@ -3180,7 +3180,7 @@ function addPayout() {
   refreshAllCharts();
 }
 function removePayout(i) {
-  const payouts = ls('tj_payouts', []);
+  const payouts = lsAcc('tj_payouts', []);
   payouts.splice(i, 1);
   lssAcc('tj_payouts', payouts);
   renderPayouts();
