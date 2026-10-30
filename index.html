@@ -342,8 +342,8 @@
     </div>
     <div class="card-body">
       <div class="form-grid">
-        <div class="fg"><label data-editable>Date</label><input type="date" id="f-date"></div>
-        <div class="fg"><label data-editable>Heure</label><input type="time" id="f-heure"></div>
+        <div class="fg"><label data-editable>Début</label><div class="dtc"><input type="date" class="dtc-date" id="f-date" tabindex="-1"><input type="time" class="dtc-time" id="f-heure" tabindex="-1"></div></div>
+        <div class="fg"><label data-editable>Fin</label><div class="dtc"><input type="date" class="dtc-date" id="f-date-fin" tabindex="-1"><input type="time" class="dtc-time" id="f-heure-fin" tabindex="-1"></div></div>
         <div class="fg"><label data-editable>Session</label><select id="f-session"></select></div>
         <div class="fg"><label data-editable>Paire / Actif</label><select id="f-paire"></select></div>
         <div class="fg"><label data-editable>Direction</label><select id="f-dir"><option value="">—</option><option>LONG</option><option>SHORT</option></select></div>
@@ -618,8 +618,8 @@
       </div>
     </div>
     <div class="form-grid" style="margin-bottom:10px;">
-      <div class="fg"><label>Date</label><input type="date" id="e-date"></div>
-      <div class="fg"><label>Heure</label><input type="time" id="e-heure"></div>
+      <div class="fg"><label>Début</label><div class="dtc"><input type="date" class="dtc-date" id="e-date" tabindex="-1"><input type="time" class="dtc-time" id="e-heure" tabindex="-1"></div></div>
+      <div class="fg"><label>Fin</label><div class="dtc"><input type="date" class="dtc-date" id="e-date-fin" tabindex="-1"><input type="time" class="dtc-time" id="e-heure-fin" tabindex="-1"></div></div>
       <div class="fg"><label>Session</label><select id="e-session"></select></div>
       <div class="fg"><label>Paire / Actif</label><select id="e-paire"></select></div>
       <div class="fg"><label>Direction</label><select id="e-dir"><option value="">—</option><option>LONG</option><option>SHORT</option></select></div>
@@ -743,6 +743,7 @@
 <script src="cashflow-link.js"></script>
 <script src="theme-v2.js"></script>
 <script src="payout-confetti.js"></script>
+<script src="trade-startend.js"></script>
 <script>
 // Mode téléphone : les horloges (ville + heure) s'adaptent à la place libre
 // à droite du bouton TJP : plus le bouton est petit, plus elles grandissent,

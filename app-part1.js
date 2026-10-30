@@ -2033,6 +2033,8 @@ function addTrade() {
     id: 0, // attribué après validation (voir newTradeId)
     date: g('f-date').trim(),
     heure: g('f-heure').trim(),
+    dateFin: g('f-date-fin').trim(),
+    heureFin: g('f-heure-fin').trim(),
     paire: g('f-paire'),
     session: g('f-session'),
     conf: confs || '—',
@@ -2317,6 +2319,8 @@ function resetForm() {
   [
     'f-date',
     'f-heure',
+    'f-date-fin',
+    'f-heure-fin',
     'f-paire',
     'f-session',
     'f-dir',
@@ -6334,6 +6338,8 @@ function openEditTrade(id, readOnly, returnToList) {
   };
   sv('e-date', t.date);
   sv('e-heure', t.heure);
+  sv('e-date-fin', t.dateFin);
+  sv('e-heure-fin', t.heureFin);
   sv('e-res', t.res);
   sv('e-rrcible', t.rrCible);
   sv('e-rrpris', t.rrPris);
@@ -6524,6 +6530,8 @@ function saveEditTrade() {
   }
   t.date = document.getElementById('e-date').value;
   t.heure = document.getElementById('e-heure').value;
+  t.dateFin = document.getElementById('e-date-fin').value;
+  t.heureFin = document.getElementById('e-heure-fin').value;
   t.session = document.getElementById('e-session').value;
   t.paire = document.getElementById('e-paire').value;
   t.dir = document.getElementById('e-dir').value;

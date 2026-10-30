@@ -7,7 +7,6 @@
 //     bas-droit de la page ;
 //   • une petite gerbe éclate autour du bouton cliqué ;
 //   • un rideau de confettis tombe du haut de l'écran ;
-//   • des applaudissements (synthétisés, aucun fichier audio) jouent en fond.
 //
 // Enveloppe addPayout() : l'original fait tout le travail, on ne fait que
 // déclencher l'effet si le montant saisi était valide. Aucune donnée touchée.
@@ -152,60 +151,6 @@
     if (raf) return;
     lastT = performance.now();
     raf = requestAnimationFrame(frame);
-  }
-
-  // ── Applaudissements synthétisés (bruit filtré en rafales) ──
-  function applause(duration) {
-    try {
-      var AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return;
-      var ac = new AC();
-      if (ac.state === 'suspended') ac.resume();
-      var sr = ac.sampleRate;
-      var buf = ac.createBuffer(1, sr, sr);
-      var data = buf.getChannelData(0);
-      for (var i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-
-      var master = ac.createGain();
-      master.gain.value = 0.55;
-      master.connect(ac.destination);
-
-      // Densité de claps : monte vite, plateau, puis s'éteint
-      var claps = Math.round(duration * 70);
-      for (var c = 0; c < claps; c++) {
-        var u = Math.random();
-        // répartition dans le temps pondérée par une enveloppe
-        var at = duration * (u < 0.15 ? u * 2 : u < 0.75 ? 0.3 + (u - 0.15) * 0.8 : 0.78 + (u - 0.75) * 0.88);
-        var env = at < 0.4 ? at / 0.4 : at > duration - 1.2 ? Math.max(0, (duration - at) / 1.2) : 1;
-        if (Math.random() > env) continue;
-
-        var src = ac.createBufferSource();
-        src.buffer = buf;
-        src.loop = true;
-        var bp = ac.createBiquadFilter();
-        bp.type = 'bandpass';
-        bp.frequency.value = rnd(1200, 3800);
-        bp.Q.value = rnd(0.6, 1.6);
-        var g = ac.createGain();
-        var t0 = ac.currentTime + at;
-        var peak = rnd(0.25, 0.9) * env;
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(peak, t0 + 0.003);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + rnd(0.03, 0.09));
-        src.connect(bp);
-        bp.connect(g);
-        g.connect(master);
-        src.start(t0, Math.random() * 0.5);
-        src.stop(t0 + 0.12);
-      }
-      setTimeout(function () {
-        try {
-          ac.close();
-        } catch (e) {}
-      }, (duration + 1) * 1000);
-    } catch (e) {
-      console.warn('Applaudissements :', e);
-    }
   }
 
   function celebrate() {
