@@ -8,6 +8,7 @@
 //     2e clic → ouvre le sélecteur de date pour la modifier.
 //   • 1er clic sur 🕐 → affiche l'heure choisie ; 2e clic → ouvre le
 //     sélecteur d'heure pour la modifier.
+// Les fenêtres de choix reprennent les couleurs du calendrier de période des graphiques.
 // Les vrais champs <input type="date|time"> restent dans la page (invisibles,
 // mêmes id qu'avant) : toute la logique existante continue de les lire.
 // La case garde exactement la taille des autres champs (un champ invisible
@@ -44,7 +45,12 @@
     '.dtc-b:focus-visible{outline:1px solid var(--fg-dtc-btn-active,#8b9bff);}' +
     '.dtc-v{flex:1;min-width:0;font-size:12px;font-family:var(--mono,monospace);white-space:nowrap;overflow:hidden;' +
     'text-overflow:ellipsis;text-align:left;color:var(--fg-input-fg-select-fg-textarea-color,#e2e8f0);}' +
-    '.dtc-v:empty::before{content:"";}';
+    '.dtc-v:empty::before{content:"";}' +
+    // listes Heures / Minutes de la fenêtre d'heure (couleurs = calendrier de période)
+    '.dtc-cols{display:flex;gap:8px;}.dtc-col{flex:1;min-width:0;}' +
+    '.dtc-list{max-height:182px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;position:relative;' +
+    'scrollbar-width:thin;scrollbar-color:var(--pcal-bd,#1e2d45) transparent;}' +
+    '.dtc-list .pcal-day{flex:none;width:100%;}';
 
   function injectCss() {
     if (document.getElementById('dtc-css')) return;
@@ -59,17 +65,241 @@
     return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
   }
 
-  function openPicker(inp) {
-    try {
-      if (inp.showPicker) {
-        inp.showPicker();
-        return;
+  // ── Fenêtres de choix (date / heure) ────────────────────────────────
+  // Elles réutilisent EXACTEMENT les classes du calendrier de période des
+  // graphiques (.pcal-pop, .pcal-day, .pcal-title... définies dans
+  // period-calendar.js) : mêmes couleurs, mêmes bordures, mêmes cases
+  // sélectionnées, et elles se règlent au même endroit (Paramètres → Thème →
+  // Track Record → « Calendrier de période »). Si ce module est absent, on
+  // retombe sur le sélecteur natif du navigateur.
+  var MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+  var JOURS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  var pop = null, popInp = null, popAnchor = null;
+
+  function p2(n) {
+    return (n < 10 ? '0' : '') + n;
+  }
+  function ymd(y, m, d) {
+    return y + '-' + p2(m + 1) + '-' + p2(d);
+  }
+  function todayStr() {
+    var n = new Date();
+    return ymd(n.getFullYear(), n.getMonth(), n.getDate());
+  }
+  function mk(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    if (tag === 'button') e.type = 'button';
+    return e;
+  }
+  function setValue(inp, v) {
+    inp.value = v;
+    inp.dispatchEvent(new Event('input', {bubbles: true}));
+    inp.dispatchEvent(new Event('change', {bubbles: true}));
+  }
+  function themed() {
+    return !!document.getElementById('tjp-period-calendar-style');
+  }
+
+  function closePop() {
+    if (pop && pop.parentNode) pop.parentNode.removeChild(pop);
+    pop = popInp = popAnchor = null;
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('resize', place);
+    window.removeEventListener('scroll', place, true);
+  }
+  function onOutside(e) {
+    if (!pop) return;
+    var t = e.target;
+    if (pop.contains(t) || (popAnchor && popAnchor.contains(t))) return;
+    closePop();
+  }
+  function onKey(e) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      closePop();
+    }
+  }
+  function place() {
+    if (!pop || !popAnchor) return;
+    var r = popAnchor.getBoundingClientRect();
+    var pw = pop.offsetWidth, ph = pop.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+    var top = r.bottom + 6;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+  }
+  function footer(inp, hint) {
+    var foot = mk('div', 'pcal-foot');
+    foot.appendChild(mk('div', 'pcal-hint', hint));
+    var clear = mk('button', 'pcal-clear', 'Effacer');
+    clear.addEventListener('click', function () {
+      setValue(inp, '');
+      closePop();
+    });
+    foot.appendChild(clear);
+    return foot;
+  }
+
+  function renderDatePop(inp, view) {
+    pop.textContent = '';
+    var y = view.y, m = view.m;
+    var head = mk('div', 'pcal-head');
+    function nav(label, delta, title) {
+      var b = mk('button', 'pcal-nav', label);
+      b.title = title;
+      b.addEventListener('click', function () {
+        var total = view.y * 12 + view.m + delta;
+        view.y = Math.floor(total / 12);
+        view.m = ((total % 12) + 12) % 12;
+        renderDatePop(inp, view);
+        place();
+      });
+      return b;
+    }
+    head.appendChild(nav('«', -12, 'Année précédente'));
+    head.appendChild(nav('‹', -1, 'Mois précédent'));
+    head.appendChild(mk('div', 'pcal-title', MOIS[m] + ' ' + y));
+    head.appendChild(nav('›', 1, 'Mois suivant'));
+    head.appendChild(nav('»', 12, 'Année suivante'));
+    pop.appendChild(head);
+
+    var grid = mk('div', 'pcal-grid');
+    JOURS.forEach(function (j) {
+      grid.appendChild(mk('div', 'pcal-wd', j));
+    });
+    var lead = (new Date(y, m, 1).getDay() + 6) % 7; // semaine qui commence le lundi
+    var nd = new Date(y, m + 1, 0).getDate();
+    var today = todayStr();
+    var cur = inp.value;
+    var i;
+    for (i = 0; i < lead; i++) grid.appendChild(mk('div', 'pcal-blank'));
+    for (var d = 1; d <= nd; d++) {
+      var ds = ymd(y, m, d);
+      var c = mk('button', 'pcal-day' + (ds === today ? ' today' : '') + (ds === cur ? ' sel' : ''), String(d));
+      c.addEventListener(
+        'click',
+        (function (v) {
+          return function () {
+            setValue(inp, v);
+            closePop();
+          };
+        })(ds)
+      );
+      grid.appendChild(c);
+    }
+    for (i = lead + nd; i < 42; i++) grid.appendChild(mk('div', 'pcal-blank'));
+    pop.appendChild(grid);
+    pop.appendChild(footer(inp, 'Choisis le jour'));
+  }
+
+  function renderTimePop(inp) {
+    pop.textContent = '';
+    var head = mk('div', 'pcal-head');
+    head.appendChild(mk('div', 'pcal-title', 'Heure'));
+    pop.appendChild(head);
+
+    function cur() {
+      var m = /^(\d{2}):(\d{2})/.exec(inp.value || '');
+      return m ? {h: m[1], m: m[2]} : null;
+    }
+    var now = new Date();
+    var cols = mk('div', 'dtc-cols');
+    var lists = {};
+    function column(key, label, count, nowVal) {
+      var col = mk('div', 'dtc-col');
+      col.appendChild(mk('div', 'pcal-wd', label));
+      var list = mk('div', 'dtc-list');
+      for (var v = 0; v < count; v++) {
+        var t = p2(v);
+        var b = mk('button', 'pcal-day' + (t === nowVal ? ' today' : ''), t);
+        b.dataset.v = t;
+        b.addEventListener(
+          'click',
+          (function (val) {
+            return function () {
+              var c = cur();
+              if (key === 'h') {
+                setValue(inp, val + ':' + (c ? c.m : '00'));
+                mark();
+              } else {
+                setValue(inp, (c ? c.h : p2(now.getHours())) + ':' + val);
+                closePop();
+              }
+            };
+          })(t)
+        );
+        list.appendChild(b);
       }
-    } catch (e) {}
-    try {
-      inp.focus();
-      inp.click();
-    } catch (e) {}
+      col.appendChild(list);
+      cols.appendChild(col);
+      lists[key] = list;
+    }
+    column('h', 'Heures', 24, p2(now.getHours()));
+    column('m', 'Minutes', 60, p2(now.getMinutes()));
+    pop.appendChild(cols);
+    pop.appendChild(footer(inp, 'Choisis l’heure, puis les minutes'));
+
+    function mark() {
+      var c = cur();
+      ['h', 'm'].forEach(function (k) {
+        Array.prototype.forEach.call(lists[k].children, function (b) {
+          b.classList.toggle('sel', !!c && b.dataset.v === c[k]);
+        });
+      });
+    }
+    mark();
+    return function scrollToSel() {
+      ['h', 'm'].forEach(function (k) {
+        var s = lists[k].querySelector('.sel') || lists[k].querySelector('.today');
+        if (s) lists[k].scrollTop = Math.max(0, s.offsetTop - lists[k].offsetTop - 52);
+      });
+    };
+  }
+
+  // kind : 'date' | 'time' ; anchor : la case (pour placer la fenêtre)
+  function openPicker(kind, inp, anchor) {
+    if (pop && popInp === inp) {
+      closePop(); // 3e clic : on referme
+      return;
+    }
+    closePop();
+    if (!themed()) {
+      try {
+        if (inp.showPicker) {
+          inp.showPicker();
+          return;
+        }
+      } catch (e) {}
+      try {
+        inp.focus();
+        inp.click();
+      } catch (e) {}
+      return;
+    }
+    pop = mk('div', 'pcal-pop');
+    pop.style.zIndex = '20000';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', kind === 'date' ? 'Choisir la date' : "Choisir l'heure");
+    popInp = inp;
+    popAnchor = anchor;
+    document.body.appendChild(pop);
+    var after = null;
+    if (kind === 'date') {
+      var ref = /^\d{4}-\d{2}-\d{2}$/.test(inp.value) ? inp.value : todayStr();
+      renderDatePop(inp, {y: parseInt(ref.slice(0, 4), 10), m: parseInt(ref.slice(5, 7), 10) - 1});
+    } else {
+      after = renderTimePop(inp);
+    }
+    place();
+    if (after) after();
+    document.addEventListener('pointerdown', onOutside, true);
+    document.addEventListener('keydown', onKey, true);
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
   }
 
   // Construit l'interface d'une case à partir de son conteneur .dtc
@@ -116,7 +346,7 @@
           shown = which; // 1er clic : on affiche la valeur
           render();
         } else {
-          openPicker(inp); // 2e clic : on propose de modifier
+          openPicker(which, inp, ui); // 2e clic : on propose de modifier
         }
       };
     }
