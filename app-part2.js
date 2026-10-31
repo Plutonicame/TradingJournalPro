@@ -2965,7 +2965,9 @@ function pcPrepareTradesForAI(trades) {
 // Contexte global du compte (réglages + état actuel) — envoyé une seule fois par requête,
 // en plus de la liste des trades, pour que l'IA ait toute l'image du compte sans exception.
 function pcPrepareAccountContext() {
-  const totalPO = lsAcc('tj_payouts', []).reduce((s, p) => s + (p.amount || 0), 0);
+  const totalPO = lsAcc('tj_payouts', [])
+    .filter(p => p.kind !== 'deposit')
+    .reduce((s, p) => s + (p.amount || 0), 0);
   return {
     capitalDepart: CAPITAL(),
     risqueBasePct: RBASE(),

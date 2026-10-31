@@ -1493,7 +1493,11 @@ function computeRiskHistory(includeBT = false) {
       : !smartEvs[0].on
     : !!SMART();
   // Événements placés AVANT les trades en cas d'égalité date+heure (tri stable)
-  const items = [...rmEvs, ...sorted].sort(rmCmpDT);
+  // Ajouts de capital : font monter le capital courant (et ses repères) sans être des trades.
+  const depEvs = lsAcc('tj_payouts', [])
+    .filter(isDeposit)
+    .map(p => ({_dep: true, date: p.date || '', heure: p.heure || '', amount: -(p.amount || 0)}));
+  const items = [...rmEvs, ...depEvs, ...sorted].sort(rmCmpDT);
   let rp = base,
     ws = 0,
     ls2 = 0;
@@ -1521,6 +1525,12 @@ function computeRiskHistory(includeBT = false) {
     downVarVal = cfg0.downVarVal;
 
   items.forEach(t => {
+    if (t._dep) {
+      runCap += t.amount;
+      highestEq += t.amount;
+      upRefCap += t.amount;
+      return;
+    }
     if (t._ev) {
       if (t.kind === 'adjust') {
         // Ajustement manuel : change le risque instantanément, sans toucher à la stratégie ni aux compteurs
@@ -1702,7 +1712,8 @@ function getRiskHistMap() {
     RM_DOWN_VAR_TYPE(),
     RM_DOWN_VAR_VAL(),
     RMAX(),
-    JSON.stringify(RM_EVENTS())
+    JSON.stringify(RM_EVENTS()),
+    JSON.stringify(lsAcc('tj_payouts', []).filter(isDeposit))
   ].join('|');
   if (_rrHistCache && _rrHistSig === sig) return _rrHistCache;
   const map = new Map();
@@ -3197,23 +3208,94 @@ function removePayout(i) {
     schedulePush(300);
   }
 }
+// ── Ajout de capital ─────────────────────────────────────────────────────
+// Un « ajout de capital » est stocké dans la même liste que les payouts
+// (tj_payouts), avec un montant NÉGATIF et kind:'deposit' : tout le calcul du
+// capital (capital = départ + trades − payouts) le prend donc en compte sans
+// rien changer, et il se synchronise comme le reste. Il n'est jamais un trade :
+// absent de l'historique, des statistiques et du total « Pay Out ».
+function isDeposit(p) {
+  return !!p && p.kind === 'deposit';
+}
+function depositItems() {
+  return lsAcc('tj_payouts', [])
+    .map((p, i) => ({p, i}))
+    .filter(x => isDeposit(x.p))
+    .map(({p, i}) => ({
+      _dep: true,
+      id: 'dep' + i,
+      idx: i,
+      date: p.date || '',
+      heure: p.heure || '',
+      res: -(p.amount || 0),
+      note: p.note || 'Ajout manuel de capital'
+    }));
+}
+// Ajouts qui tombent dans la même période qu'un graphique (mêmes règles que les trades,
+// y compris une plage de dates choisie au calendrier) : on réutilise filterT().
+function depositsForPeriod(period) {
+  const items = depositItems();
+  if (!items.length) return [];
+  const saved = APP.trades;
+  APP.trades = items;
+  try {
+    return filterT(period);
+  } finally {
+    APP.trades = saved;
+  }
+}
+function mergeDeposits(tr, deps) {
+  if (!deps.length) return tr;
+  return [...tr, ...deps].sort(
+    (a, b) => a.date.localeCompare(b.date) || (a.heure || '').localeCompare(b.heure || '')
+  );
+}
+function showDepositInfo(d) {
+  openTradesListModal('Ajout de capital du ' + (d.date || ''), []);
+  const body = document.getElementById('tlmBody');
+  if (!body) return;
+  const amt = d.res.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  body.innerHTML = `<div style="padding:6px 2px 4px;font-size:13px;line-height:1.7;">
+    <div style="color:var(--gold);font-weight:700;font-family:var(--mono);">+${amt} €</div>
+    <div>${escapeHtml(d.note)}</div>
+    <div style="color:var(--muted);font-size:11px;">${escapeHtml(d.date || '')}${d.heure ? ' à ' + escapeHtml(d.heure) : ''}</div>
+    <div style="color:var(--muted);font-size:11px;margin-top:6px;">Ce n'est pas un trade : le capital a été augmenté à la main.</div>
+  </div>`;
+}
+function addDeposit() {
+  const el = document.getElementById('depositInput');
+  const v = Math.round((parseFloat(el.value) || 0) * 100) / 100; // jusqu'au centime
+  if (v <= 0) return;
+  const list = lsAcc('tj_payouts', []);
+  const st = rmNowStamp();
+  list.push({date: st.date, heure: st.heure, amount: -v, kind: 'deposit', note: 'Ajout manuel de capital'});
+  lssAcc('tj_payouts', list);
+  el.value = '';
+  renderPayouts();
+  updateNavBadges();
+  updateKPIs();
+  refreshAllCharts();
+  if (typeof currentUser !== 'undefined' && currentUser && !_isSyncing) {
+    schedulePush(300);
+  }
+}
 function renderPayouts() {
   const payouts = lsAcc('tj_payouts', []);
-  const total = payouts.reduce((s, p) => s + p.amount, 0);
+  const chip = (color, sign, amount, date, i) => `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);">
+    <span style="color:${color}">${sign}${amount.toLocaleString('fr-FR')}€</span>
+    <span style="color:var(--muted)">${date || ''}</span>
+    <button onclick="removePayout(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;">×</button>
+  </div>`;
   // payoutTotal removed from modifs, shown in KPI instead
   const hist = document.getElementById('payoutHistory');
   if (hist)
     hist.innerHTML = payouts
-      .map(
-        (
-          p,
-          i
-        ) => `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);">
-    <span style="color:var(--gold)">-${p.amount.toLocaleString('fr-FR')}€</span>
-    <span style="color:var(--muted)">${p.date}</span>
-    <button onclick="removePayout(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;">×</button>
-  </div>`
-      )
+      .map((p, i) => (isDeposit(p) ? '' : chip('var(--gold)', '-', p.amount, p.date, i)))
+      .join('');
+  const dh = document.getElementById('depositHistory');
+  if (dh)
+    dh.innerHTML = payouts
+      .map((p, i) => (isDeposit(p) ? chip('var(--green)', '+', -p.amount, p.date, i) : ''))
       .join('');
 }
 function renderModifs() {
@@ -3542,6 +3624,9 @@ function buildLabels(tr, period) {
 function updateKPIs() {
   const t = BT_STATE.kpi ? APP.trades : realTrades();
   const totalPO0 = lsAcc('tj_payouts', []).reduce((s, p) => s + (p.amount || 0), 0);
+  const totalPayOnly = lsAcc('tj_payouts', [])
+    .filter(p => !isDeposit(p))
+    .reduce((s, p) => s + (p.amount || 0), 0);
   const dispCap = CAPITAL() + t.reduce((s, x) => s + (x.res || 0), 0) - totalPO0;
   const rp = BT_STATE.kpi ? computeRiskHistory(true).finalRp : getCurrentRiskPct();
   const re = Math.round(((dispCap * rp) / 100) * 100) / 100;
@@ -3551,8 +3636,8 @@ function updateKPIs() {
   {
     const k5el = document.getElementById('k5');
     if (k5el) {
-      k5el.textContent = (totalPO0 > 0 ? '-' : '') + fr(totalPO0) + ' €';
-      k5el.style.color = totalPO0 > 0 ? 'var(--gold)' : 'var(--muted)';
+      k5el.textContent = (totalPayOnly > 0 ? '-' : '') + fr(totalPayOnly) + ' €';
+      k5el.style.color = totalPayOnly > 0 ? 'var(--gold)' : 'var(--muted)';
     }
   }
   const btCount = APP.trades.filter(x => x.backtest).length;
@@ -3621,7 +3706,7 @@ function updateKPIs() {
 
 // EQUITY
 function drawEquity(period) {
-  const tr = btFilter('eq', period);
+  const tr = mergeDeposits(btFilter('eq', period), depositsForPeriod(period));
   destroy('eq');
   if (!tr.length) return;
   let cap = CAPITAL();
@@ -3651,8 +3736,12 @@ function drawEquity(period) {
           borderWidth: 2.5,
           fill: true,
           tension: 0,
-          pointRadius: 0,
-          pointHoverRadius: 4
+          // Les ajouts de capital ressortent par un point doré sur la courbe
+          pointRadius: tr.map(t => (t._dep ? 6 : 0)),
+          pointStyle: tr.map(t => (t._dep ? 'rectRot' : 'circle')),
+          pointBackgroundColor: tr.map(t => (t._dep ? gc('--gold') || '#f5b93d' : lc)),
+          pointBorderColor: tr.map(t => (t._dep ? gc('--gold') || '#f5b93d' : lc)),
+          pointHoverRadius: tr.map(t => (t._dep ? 8 : 4))
         }
       ]
     },
@@ -3662,14 +3751,22 @@ function drawEquity(period) {
       onClick: (evt, elements) => {
         if (!elements.length) return;
         const t = tr[elements[0].index];
-        if (t) openTradesListModal('Trade : ' + (t.paire || '—') + ' du ' + (t.date || ''), [t]);
+        if (t && t._dep) showDepositInfo(t);
+        else if (t) openTradesListModal('Trade : ' + (t.paire || '—') + ' du ' + (t.date || ''), [t]);
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
       },
       plugins: {
         legend: {display: false},
-        tooltip: {callbacks: {label: i => ' Capital : ' + i.parsed.y.toLocaleString('fr-FR') + '€'}}
+        tooltip: {
+          callbacks: {
+            label: i =>
+              (tr[i.dataIndex] && tr[i.dataIndex]._dep
+                ? ' Ajout de capital : +' + tr[i.dataIndex].res.toLocaleString('fr-FR') + '€ → Capital : '
+                : ' Capital : ') + i.parsed.y.toLocaleString('fr-FR') + '€'
+          }
+        }
       },
       scales: {
         x: {grid: {color: grC}, ticks: {maxRotation: 30, maxTicksLimit: 12, color: axC}},
@@ -3681,7 +3778,7 @@ function drawEquity(period) {
 
 // PNL — Diagramme en barres par trade
 function drawPnl(period) {
-  const tr = btFilter('pnl', period);
+  const tr = mergeDeposits(btFilter('pnl', period), depositsForPeriod(period));
   destroy('pnl');
   if (!tr.length) return;
   const posC = gc('--pnl-bar-pos') || '#3b82f6';
@@ -3699,11 +3796,14 @@ function drawPnl(period) {
     return t.date.slice(5);
   });
   const data = sorted.map(t => t.res || 0);
-  const colors = data.map(v => (v >= 0 ? posC : negC));
+  const depC = gc('--gold') || '#f5b93d';
+  const colors = data.map((v, i) => (sorted[i]._dep ? depC : v >= 0 ? posC : negC));
 
   // Moyennes calculées automatiquement sur les trades affichés (gains et pertes séparément)
-  const gains = data.filter(v => v > 0),
-    pertes = data.filter(v => v < 0);
+  // — les ajouts de capital ne sont pas des trades, ils n'entrent pas dans les moyennes.
+  const tradeData = data.filter((v, i) => !sorted[i]._dep);
+  const gains = tradeData.filter(v => v > 0),
+    pertes = tradeData.filter(v => v < 0);
   const avgGain = gains.length ? gains.reduce((a, b) => a + b, 0) / gains.length : null;
   const avgLoss = pertes.length ? pertes.reduce((a, b) => a + b, 0) / pertes.length : null;
 
@@ -3765,7 +3865,8 @@ function drawPnl(period) {
         const el = elements.find(e => e.datasetIndex === 0) || elements[0];
         if (!el) return;
         const t = sorted[el.index];
-        if (t) openTradesListModal('Trade : ' + (t.paire || '—') + ' du ' + (t.date || ''), [t]);
+        if (t && t._dep) showDepositInfo(t);
+        else if (t) openTradesListModal('Trade : ' + (t.paire || '—') + ' du ' + (t.date || ''), [t]);
       },
       onHover: (evt, elements) => {
         evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
@@ -3785,6 +3886,8 @@ function drawPnl(period) {
                   i.parsed.y.toLocaleString('fr-FR', {maximumFractionDigits: 2}) +
                   '€'
                 );
+              if (sorted[i.dataIndex] && sorted[i.dataIndex]._dep)
+                return ' Ajout de capital : +' + data[i.dataIndex].toLocaleString('fr-FR') + '€';
               return (
                 ' P&L : ' +
                 (data[i.dataIndex] >= 0 ? '+' : '') +

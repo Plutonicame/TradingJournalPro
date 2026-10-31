@@ -241,7 +241,7 @@
     lsAcc('tj_payouts', []).forEach(function (po) {
       var a = po.amount || 0;
       if (!po.date || po.date <= r.to) poUntilEnd += a;
-      if (po.date && inR(po.date)) poInRange += a;
+      if (po.date && inR(po.date) && po.kind !== 'deposit') poInRange += a;
     });
     var capEnd =
       all.reduce(function (sum, x) {
