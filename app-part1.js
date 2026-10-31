@@ -30,7 +30,7 @@ async function signInWithGoogle() {
   const {error} = await sb.auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: 'https://plutonicame.github.io/tjpro/',
+      redirectTo: 'https://plutonicame.github.io/TradingJournalPro/',
       queryParams: {prompt: 'select_account'}
     }
   });

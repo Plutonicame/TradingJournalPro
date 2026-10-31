@@ -5,7 +5,7 @@
 // (montant + date de chaque trade, HORS backtest) des sous-comptes qu'il coche. RIEN d'autre n'est partagé.
 //
 // Déroulé :
-//   1. Cashflow Tracker redirige vers  https://plutonicame.github.io/tjpro/?cashflow_link=1&return=<URL>&state=<valeur>
+//   1. Cashflow Tracker redirige vers  https://plutonicame.github.io/TradingJournalPro/?cashflow_link=1&return=<URL>&state=<valeur>
 //   2. L'utilisateur se connecte à TJP normalement (Google + PIN) — c'est la preuve que c'est bien son compte.
 //   3. Cet écran liste SES sous-comptes ; il coche, puis « Autoriser ».
 //   4. L'Edge Function `cashflow-link` crée un jeton de liaison (stocké seulement sous forme d'empreinte).
