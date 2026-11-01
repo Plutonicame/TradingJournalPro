@@ -998,6 +998,16 @@ body.pencil-mode [data-editable]:hover {
 #e-tf-wrap .chip {
   flex: 0 0 auto;
 }
+/* Fenêtre « Modifier le trade » : si les timeframes ne tiennent pas sur une ligne,
+   ceux en trop passent sur une 2e ligne (au lieu de dépasser et de créer un défilement
+   horizontal). min-width:0 laisse la case se réduire à la largeur de la fenêtre. */
+#editModal .form-grid > .fg {
+  min-width: 0;
+}
+#editModal #e-tf-wrap {
+  flex-wrap: wrap;
+  min-width: 0;
+}
 
 .btn {
   font-family: var(--mono);
@@ -2219,7 +2229,7 @@ body.cf-mode-ultrawide #editModal .cp-modal {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.7);
-  z-index: 2000;
+  z-index: 20000; /* au-dessus des fenêtres « Modifier le trade » (10000) et liste de trades (10000) */
   display: none;
   align-items: center;
   justify-content: center;
