@@ -2833,6 +2833,7 @@ function renderTable() {
     <td style="color:var(--muted);max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(t.conf)}">${escapeHtml(t.conf) || '—'}</td>
     <td style="font-family:var(--mono);color:var(--muted)">${t.rrCible ? t.rrCible + 'R' : '—'}</td>
     <td style="font-family:var(--mono)">${computeRR(t)}R</td>
+    <td style="font-family:var(--mono);color:var(--muted);white-space:nowrap">${t.risqueEur > 0 ? t.risqueEur.toLocaleString('fr-FR') + '€' : '—'}</td>
     <td>${fmtR(t.res)}</td><td>${pctHtml}</td>
     <td>${tagMgmt(t.mgmt)}</td><td>${tagO(t.reprend)}</td>
     <td style="white-space:nowrap">${starsHtml(t.stars)}</td>

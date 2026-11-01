@@ -38,6 +38,7 @@ const CF_BUILTIN_COLS = [
   {id: 'conf', label: 'Confluences'},
   {id: 'rrcible', label: 'RR Cible'},
   {id: 'rrpris', label: 'RR Réalisé'},
+  {id: 'risque', label: 'Risque'},
   {id: 'res', label: 'Résultat'},
   {id: 'pct', label: '%'},
   {id: 'mgmt', label: 'Mgmt'},
