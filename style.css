@@ -33,6 +33,8 @@
   --eq-grid: rgba(100, 116, 139, 0.1);
   --pnl-bar-pos: #3b82f6;
   --pnl-bar-neg: #ef4444;
+  --pnl-bar-deposit: #38bdf8;
+  --pnl-bar-payout: #f59e0b;
   --pnl-bg: #161d2e;
   --pnl-axis: #64748b;
   --pnl-grid: rgba(100, 116, 139, 0.1);
