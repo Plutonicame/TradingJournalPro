@@ -335,8 +335,6 @@
     <div class="card-header">
       <div class="card-title" data-editable data-tvar="--crt-nouveautrade" style="color:var(--crt-nouveautrade,#00e5a0)">NOUVEAU TRADE</div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;" data-editable>RR auto</span>
-        <div class="tgl-track on" id="f-tglRrAuto" onclick="toggleFormRrAuto('f')"><div class="tgl-thumb"></div></div>
         <button class="btn btn-g" onclick="resetForm()">✕</button>
       </div>
     </div>
@@ -348,7 +346,8 @@
         <div class="fg"><label data-editable>Paire / Actif</label><select id="f-paire"></select></div>
         <div class="fg"><label data-editable>Direction</label><select id="f-dir"><option value="">—</option><option>LONG</option><option>SHORT</option></select></div>
         <div class="fg"><label data-editable>RR Cible</label><input type="number" id="f-rrcible" placeholder="2.0" step="0.1"></div>
-        <div class="fg" id="f-rrpris-group" style="display:none;"><label data-editable>RR Pris</label><input type="number" id="f-rrpris" placeholder="2.0" step="0.1"></div>
+        <div class="fg" id="f-rrpris-group"><label data-editable>RR Pris</label><input type="number" id="f-rrpris" placeholder="2.0" step="0.1"></div>
+        <div class="fg" id="f-risqueeur-group"><label data-editable>Risque pris (€)</label><input type="number" id="f-risqueeur" placeholder="50" min="0" step="0.01"></div>
         <div class="fg"><label data-editable>Résultat (€)</label><input type="number" id="f-res" placeholder="150 ou -80"></div>
         <div class="fg"><label data-editable>Management</label><select id="f-mgmt"></select></div>
         <div class="fg"><label data-editable>Reprendrais-tu ?</label><select id="f-reprend"></select></div>
@@ -620,10 +619,6 @@
   <div class="cp-modal" style="width:420px;max-height:90vh;overflow-y:auto;position:relative;z-index:10001;">
     <div class="cp-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
       <span>MODIFIER LE TRADE</span>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:10px;color:var(--muted);font-family:var(--mono);white-space:nowrap;">RR Pris auto</span>
-        <div class="tgl-track" id="e-tglRrAuto" onclick="toggleFormRrAuto('e')"><div class="tgl-thumb"></div></div>
-      </div>
     </div>
     <div class="form-grid" style="margin-bottom:10px;">
       <div class="fg"><label>Début</label><div class="dtc"><input type="date" class="dtc-date" id="e-date" tabindex="-1"><input type="time" class="dtc-time" id="e-heure" tabindex="-1"></div></div>
@@ -632,7 +627,8 @@
       <div class="fg"><label>Paire / Actif</label><select id="e-paire"></select></div>
       <div class="fg"><label>Direction</label><select id="e-dir"><option value="">—</option><option>LONG</option><option>SHORT</option></select></div>
       <div class="fg"><label>RR Cible</label><input type="number" id="e-rrcible" step="0.1"></div>
-      <div class="fg" id="e-rrpris-group" style="display:none;"><label>RR Pris</label><input type="number" id="e-rrpris" step="0.1"></div>
+      <div class="fg" id="e-rrpris-group"><label>RR Pris</label><input type="number" id="e-rrpris" step="0.1"></div>
+      <div class="fg" id="e-risqueeur-group"><label>Risque pris (€)</label><input type="number" id="e-risqueeur" min="0" step="0.01"></div>
       <div class="fg"><label>Résultat (€)</label><input type="number" id="e-res"></div>
       <div class="fg"><label>Management</label><select id="e-mgmt"></select></div>
       <div class="fg"><label>Reprendrais-tu ?</label><select id="e-reprend"></select></div>

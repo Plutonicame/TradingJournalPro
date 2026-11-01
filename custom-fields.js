@@ -2951,6 +2951,10 @@ if (window.matchMedia) {
     var c = document.getElementById(prefix + '-rrcible');
     var cg = c && c.closest('.fg');
     if (g && cg && cg.parentNode && cg.nextElementSibling !== g) cg.parentNode.insertBefore(g, cg.nextSibling);
+    // « Risque pris (€) » : juste après RR Pris (qui est toujours affiché)
+    var rk = document.getElementById(prefix + '-risqueeur-group');
+    var after = g || cg;
+    if (rk && after && after.parentNode && after.nextElementSibling !== rk) after.parentNode.insertBefore(rk, after.nextSibling);
   }
   function all() { place('f'); place('e'); }
   if (typeof window.cfInjectFormFields === 'function') {

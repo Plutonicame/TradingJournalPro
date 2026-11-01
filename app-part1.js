@@ -1728,6 +1728,11 @@ function computeRR(t) {
   if (t && t.rrAuto === false && typeof t.rrPris === 'number' && t.rrPris !== 0) {
     return t.rrPris;
   }
+  // Risque pris en € renseigné sur ce trade : RR = résultat ÷ risque (ex. +150 € pour 50 € risqués = 3R),
+  // indépendamment du risque intelligent. Les trades sans risque saisi gardent l'ancien calcul.
+  if (t && typeof t.risqueEur === 'number' && t.risqueEur > 0) {
+    return parseFloat(((t.res || 0) / t.risqueEur).toFixed(2));
+  }
   let capBase = CAPITAL(),
     rpBase = RBASE();
   if (t && !t.backtest && t.id !== undefined) {
@@ -2039,11 +2044,11 @@ function addTrade() {
   const confs = Array.from(document.querySelectorAll('#conf-wrap .chip.sel'))
     .map(c => c.dataset.v)
     .join('|');
-  const fRrAutoOn = document.getElementById('f-tglRrAuto')?.classList.contains('on');
   const t = {
     id: 0, // attribué après validation (voir newTradeId)
     date: g('f-date').trim(),
     heure: g('f-heure').trim(),
+    risqueEur: Math.round((parseFloat(g('f-risqueeur')) || 0) * 100) / 100,
     dateFin: g('f-date-fin').trim(),
     heureFin: g('f-heure-fin').trim(),
     paire: g('f-paire'),
@@ -2052,7 +2057,7 @@ function addTrade() {
     tf: tfs || '—',
     dir: g('f-dir'),
     rrCible: parseFloat(g('f-rrcible')) || 0,
-    rrAuto: fRrAutoOn !== false,
+    rrAuto: false, // RR Pris toujours saisi à la main (le bouton « RR auto » n'existe plus)
     rrPris: parseFloat(g('f-rrpris')) || 0,
     res: parseFloat(g('f-res')) || 0,
     mgmt: g('f-mgmt'),
@@ -2332,6 +2337,7 @@ function resetForm() {
     'f-heure',
     'f-date-fin',
     'f-heure-fin',
+    'f-risqueeur',
     'f-paire',
     'f-session',
     'f-dir',
@@ -2354,11 +2360,6 @@ function resetForm() {
   initStarPicker('f-stars-picker', 'f-stars', 0);
   window._formImages = [];
   renderFormImages();
-  const fTgl = document.getElementById('f-tglRrAuto');
-  if (fTgl) {
-    fTgl.classList.add('on');
-    document.getElementById('f-rrpris-group').style.display = 'none';
-  }
   autoGrow(document.getElementById('f-notes'));
 }
 function tagD(v) {
@@ -6332,13 +6333,6 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('tglSmart').classList.toggle('on', smart);
   document.getElementById('smartLbl').textContent = smart ? 'Activé' : 'Désactivé';
   document.getElementById('riskCard').style.display = rmShowRiskCard() ? '' : 'none';
-  // Toggle RR Pris auto : toujours activé (ON) au chargement initial
-  const fTgl = document.getElementById('f-tglRrAuto');
-  if (fTgl) {
-    fTgl.classList.add('on');
-    const g = document.getElementById('f-rrpris-group');
-    if (g) g.style.display = 'none';
-  }
   // Charts drawn with a small delay to ensure canvas dimensions are ready
   setTimeout(function () {
     refreshAllCharts();
@@ -6464,18 +6458,10 @@ function openEditTrade(id, readOnly, returnToList) {
   sv('e-heure', t.heure);
   sv('e-date-fin', t.dateFin);
   sv('e-heure-fin', t.heureFin);
+  sv('e-risqueeur', t.risqueEur);
   sv('e-res', t.res);
   sv('e-rrcible', t.rrCible);
   sv('e-rrpris', t.rrPris);
-  const eTgl = document.getElementById('e-tglRrAuto');
-  const eGroup = document.getElementById('e-rrpris-group');
-  const eIsAuto = t.rrAuto !== false;
-  if (eTgl) {
-    eTgl.classList.toggle('on', eIsAuto);
-  }
-  if (eGroup) {
-    eGroup.style.display = eIsAuto ? 'none' : '';
-  }
   sv('e-notes', t.notes);
   sv('e-stars', t.stars);
   [
@@ -6656,11 +6642,12 @@ function saveEditTrade() {
   t.heure = document.getElementById('e-heure').value;
   t.dateFin = document.getElementById('e-date-fin').value;
   t.heureFin = document.getElementById('e-heure-fin').value;
+  t.risqueEur = Math.round((parseFloat(document.getElementById('e-risqueeur').value) || 0) * 100) / 100;
   t.session = document.getElementById('e-session').value;
   t.paire = document.getElementById('e-paire').value;
   t.dir = document.getElementById('e-dir').value;
   t.rrCible = parseFloat(document.getElementById('e-rrcible').value) || 0;
-  t.rrAuto = document.getElementById('e-tglRrAuto')?.classList.contains('on') !== false;
+  t.rrAuto = false; // RR Pris toujours saisi à la main
   t.rrPris = parseFloat(document.getElementById('e-rrpris').value) || 0;
   t.res = parseFloat(document.getElementById('e-res').value) || 0;
   t.mgmt = document.getElementById('e-mgmt').value;
