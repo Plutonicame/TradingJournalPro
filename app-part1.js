@@ -3229,8 +3229,14 @@ function depositItems() {
     date: p.date || '',
     heure: p.heure || '',
     res: -(p.amount || 0),
-    note: p.note || (isDeposit(p) ? 'Ajout manuel de capital' : 'Retrait (payout)')
+    note: p.note || (!isDeposit(p) ? 'Retrait (payout)' : p.amount > 0 ? 'Retrait manuel de capital' : 'Ajout manuel de capital')
   }));
+}
+// Nom et signe d'un mouvement de capital : payout (−), retrait manuel (−) ou ajout manuel (+)
+function depLabel(d) {
+  if (d._kind === 'payout') return {name: 'Payout', sign: '−', neg: true};
+  if (d.res < 0) return {name: 'Retrait de capital', sign: '−', neg: true};
+  return {name: 'Ajout de capital', sign: '+', neg: false};
 }
 // Ajouts qui tombent dans la même période qu'un graphique (mêmes règles que les trades,
 // y compris une plage de dates choisie au calendrier) : on réutilise filterT().
@@ -3257,25 +3263,27 @@ function depColor(d) {
     : gc('--pnl-bar-deposit') || '#38bdf8';
 }
 function showDepositInfo(d) {
-  const isPay = d._kind === 'payout';
-  openTradesListModal((isPay ? 'Payout du ' : 'Ajout de capital du ') + (d.date || ''), []);
+  const L = depLabel(d);
+  openTradesListModal(L.name + ' du ' + (d.date || ''), []);
   const body = document.getElementById('tlmBody');
   if (!body) return;
   const amt = Math.abs(d.res).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   body.innerHTML = `<div style="padding:6px 2px 4px;font-size:13px;line-height:1.7;">
-    <div style="color:${depColor(d)};font-weight:700;font-family:var(--mono);">${isPay ? '−' : '+'}${amt} €</div>
+    <div style="color:${depColor(d)};font-weight:700;font-family:var(--mono);">${L.sign}${amt} €</div>
     <div>${escapeHtml(d.note)}</div>
     <div style="color:var(--muted);font-size:11px;">${escapeHtml(d.date || '')}${d.heure ? ' à ' + escapeHtml(d.heure) : ''}</div>
-    <div style="color:var(--muted);font-size:11px;margin-top:6px;">Ce n'est pas un trade : ${isPay ? 'le capital a été diminué par un retrait.' : 'le capital a été augmenté à la main.'}</div>
+    <div style="color:var(--muted);font-size:11px;margin-top:6px;">Ce n'est pas un trade : ${L.neg ? 'le capital a été diminué.' : 'le capital a été augmenté à la main.'}</div>
   </div>`;
 }
 function addDeposit() {
   const el = document.getElementById('depositInput');
-  const v = Math.round((parseFloat(el.value) || 0) * 100) / 100; // jusqu'au centime
-  if (v <= 0) return;
+  // Virgule ou point acceptés (5,5 / 5.5) ; un « - » devant = retrait de capital
+  const raw = String(el.value || '').replace(/\s/g, '').replace(',', '.').replace(/^[−–]/, '-');
+  const v = Math.round((parseFloat(raw) || 0) * 100) / 100; // jusqu'au centime
+  if (!v) return;
   const list = lsAcc('tj_payouts', []);
   const st = rmNowStamp();
-  list.push({date: st.date, heure: st.heure, amount: -v, kind: 'deposit', note: 'Ajout manuel de capital'});
+  list.push({date: st.date, heure: st.heure, amount: -v, kind: 'deposit', note: v < 0 ? 'Retrait manuel de capital' : 'Ajout manuel de capital'});
   lssAcc('tj_payouts', list);
   el.value = '';
   renderPayouts();
@@ -3302,7 +3310,13 @@ function renderPayouts() {
   const dh = document.getElementById('depositHistory');
   if (dh)
     dh.innerHTML = payouts
-      .map((p, i) => (isDeposit(p) ? chip('var(--green)', '+', -p.amount, p.date, i) : ''))
+      .map((p, i) =>
+        isDeposit(p)
+          ? p.amount > 0
+            ? chip('var(--gold)', '−', p.amount, p.date, i)
+            : chip('var(--green)', '+', -p.amount, p.date, i)
+          : ''
+      )
       .join('');
 }
 function renderModifs() {
@@ -3771,7 +3785,7 @@ function drawEquity(period) {
           callbacks: {
             label: i =>
               (tr[i.dataIndex] && tr[i.dataIndex]._dep
-                ? (tr[i.dataIndex]._kind === 'payout' ? ' Payout : −' : ' Ajout de capital : +') +
+                ? ' ' + depLabel(tr[i.dataIndex]).name + ' : ' + depLabel(tr[i.dataIndex]).sign +
                   Math.abs(tr[i.dataIndex].res).toLocaleString('fr-FR') +
                   '€ → Capital : '
                 : ' Capital : ') + i.parsed.y.toLocaleString('fr-FR') + '€'
@@ -3897,7 +3911,7 @@ function drawPnl(period) {
                 );
               if (sorted[i.dataIndex] && sorted[i.dataIndex]._dep)
                 return (
-                  (sorted[i.dataIndex]._kind === 'payout' ? ' Payout : −' : ' Ajout de capital : +') +
+                  ' ' + depLabel(sorted[i.dataIndex]).name + ' : ' + depLabel(sorted[i.dataIndex]).sign +
                   Math.abs(data[i.dataIndex]).toLocaleString('fr-FR') +
                   '€'
                 );

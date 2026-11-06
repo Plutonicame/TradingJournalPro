@@ -55,6 +55,8 @@ const CF_BUILTIN_FORM_ANCHORS = [
   {id: 'paire', label: 'Paire / Actif'},
   {id: 'dir', label: 'Direction'},
   {id: 'rrcible', label: 'RR Cible'},
+  {id: 'rrpris', label: 'RR Pris'},
+  {id: 'risqueeur', label: 'Risque pris (€)'},
   {id: 'res', label: 'Résultat'},
   {id: 'mgmt', label: 'Management'},
   {id: 'reprend', label: 'Reprendrais-tu ?'},
@@ -300,8 +302,13 @@ function cfEnsureOrders() {
   // à la fin par défaut : après la dernière question, puisque les cases à
   // cocher vivent dans une liste séparée (APP.cfToggleOrder) et
   // apparaissent de toute façon toujours après le questionnaire.
-  CF_BUILTIN_FORM_ANCHORS.forEach(a => {
-    if (!APP.cfQuestionOrder.includes(a.id)) APP.cfQuestionOrder.push(a.id);
+  CF_BUILTIN_FORM_ANCHORS.forEach((a, i) => {
+    if (APP.cfQuestionOrder.includes(a.id)) return;
+    if (a.id === 'rrpris' || a.id === 'risqueeur') {
+      // Questions ajoutées après coup : juste après la question native qui les précède
+      const prev = APP.cfQuestionOrder.indexOf(CF_BUILTIN_FORM_ANCHORS[i - 1].id);
+      APP.cfQuestionOrder.splice(prev + 1, 0, a.id);
+    } else APP.cfQuestionOrder.push(a.id);
   });
   toggleFieldIds.forEach(id => {
     if (!APP.cfToggleOrder.includes(id)) APP.cfToggleOrder.push(id);
@@ -2942,41 +2949,6 @@ if (window.matchMedia) {
     else if (mq.addListener) mq.addListener(cfRecomputeLayout);
   });
 }
-
-
-// RR Pris : reste toujours collé juste après RR Cible dans le formulaire
-// (nouveau trade + édition), quel que soit l'ordre des questions.
-(function () {
-  function place(prefix) {
-    var g = document.getElementById(prefix + '-rrpris-group');
-    var c = document.getElementById(prefix + '-rrcible');
-    var cg = c && c.closest('.fg');
-    if (g && cg && cg.parentNode && cg.nextElementSibling !== g) cg.parentNode.insertBefore(g, cg.nextSibling);
-    // « Risque pris (€) » : juste après RR Pris (qui est toujours affiché)
-    var rk = document.getElementById(prefix + '-risqueeur-group');
-    var after = g || cg;
-    if (rk && after && after.parentNode && after.nextElementSibling !== rk) after.parentNode.insertBefore(rk, after.nextSibling);
-  }
-  function all() { place('f'); place('e'); }
-  if (typeof window.cfInjectFormFields === 'function') {
-    var orig = window.cfInjectFormFields;
-    window.cfInjectFormFields = function (prefix) {
-      var r = orig.apply(this, arguments);
-      try { all(); } catch (e) {}
-      return r;
-    };
-  }
-  if (typeof window.toggleFormRrAuto === 'function') {
-    var t = window.toggleFormRrAuto;
-    window.toggleFormRrAuto = function () {
-      var r = t.apply(this, arguments);
-      try { all(); } catch (e) {}
-      return r;
-    };
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', all);
-  else all();
-})();
 
 
 // ══ NOTES TYPES (journal de trading + fenêtre de modification) ══

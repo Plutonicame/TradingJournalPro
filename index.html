@@ -437,7 +437,7 @@
         <div class="fg">
           <label data-editable>Ajouter du capital (€)</label>
           <div style="display:flex;gap:4px;align-items:center;">
-            <input type="number" id="depositInput" min="0" step="0.01" placeholder="0" style="width:100px;font-family:var(--mono);font-size:13px;">
+            <input type="text" id="depositInput" inputmode="decimal" autocomplete="off" placeholder="50 ou -50" title="Montant en €, virgule ou point acceptés. Mets un moins devant pour retirer du capital." style="width:100px;font-family:var(--mono);font-size:13px;">
             <button class="btn btn-g" style="padding:5px 9px;font-size:9px;" onclick="addDeposit()">+</button>
           </div>
         </div>

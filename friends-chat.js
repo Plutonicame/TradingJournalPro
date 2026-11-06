@@ -983,6 +983,7 @@ function fcBuildTradeCardHtml(t) {
       ${t.dateFin || t.heureFin ? `<div class="fc-trade-row"><span>Fin</span><span>${fcEsc(t.dateFin || '—')}${t.heureFin ? ' ' + fcEsc(t.heureFin) : ''}</span></div>` : ''}
       ${t.session ? `<div class="fc-trade-row"><span>Session</span><span>${fcEsc(t.session)}</span></div>` : ''}
       ${capTxt ? `<div class="fc-trade-row"><span>Compte</span><span>${fcEsc(capTxt)}</span></div>` : ''}
+      ${t.risqueEur ? `<div class="fc-trade-row"><span>Risque</span><span>${fcEsc(String(t.risqueEur))} €</span></div>` : ''}
       ${t.rrCible ? `<div class="fc-trade-row"><span>RR Visé</span><span>${fcEsc(String(t.rrCible))}R</span></div>` : ''}
       ${typeof t.rrReel === 'number' && t.rrReel ? `<div class="fc-trade-row"><span>RR Pris</span><span>${fcEsc(String(t.rrReel))}R</span></div>` : ''}
       ${t.mgmt ? `<div class="fc-trade-row"><span>Mgmt</span><span>${fcEsc(t.mgmt)}</span></div>` : ''}
@@ -1655,6 +1656,7 @@ function fcSendTradeMessage(tradeId) {
     heure: t.heure || '',
     dateFin: t.dateFin || '',
     heureFin: t.heureFin || '',
+    risqueEur: t.risqueEur || 0,
     session: t.session || '',
     paire: t.paire || '',
     dir: t.dir || '',
