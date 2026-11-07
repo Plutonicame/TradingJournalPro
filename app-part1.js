@@ -1609,18 +1609,11 @@ function computeRiskHistory(includeBT = false) {
     if (smart) {
       if (runCap > highestEq) {
         // Nouveau plus haut atteint
-        const wasInDrawdown = appliedSteps > 0;
         highestEq = runCap;
         appliedSteps = 0;
-        if (wasInDrawdown) {
-          // Rattrapage : retour au plus haut après un drawdown → on applique une hausse
-          const delta = rmVarToPct(upVarType, upVarVal, runCap);
-          rp = Math.min(rmax, Math.round((rp + delta) * 100) / 100);
-          ws = 0;
-          upRefCap = runCap;
-          upAppliedSteps = 0;
-        } else if (res > 0 && upTrigger === 'trades') {
-          // Gains consécutifs (hors drawdown) → hausse tous les X gains
+        // Plus de hausse automatique au retour au plus haut : le risque ne monte que selon les réglages
+        // (X gains consécutifs ou % de gain). Le « plus haut » ne sert qu'à mesurer le drawdown.
+        if (res > 0 && upTrigger === 'trades') {
           ws++;
           if (upTrades > 0 && ws % upTrades === 0) {
             const delta = rmVarToPct(upVarType, upVarVal, runCap);
