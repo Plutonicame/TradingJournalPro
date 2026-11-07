@@ -1607,21 +1607,25 @@ function computeRiskHistory(includeBT = false) {
       maxRealLS = Math.max(maxRealLS, realLS);
     }
     if (smart) {
+      // Le « plus haut » ne sert qu'à mesurer le drawdown (baisses de risque)
       if (runCap > highestEq) {
-        // Nouveau plus haut atteint
         highestEq = runCap;
         appliedSteps = 0;
-        // Plus de hausse automatique au retour au plus haut : le risque ne monte que selon les réglages
-        // (X gains consécutifs ou % de gain). Le « plus haut » ne sert qu'à mesurer le drawdown.
-        if (res > 0 && upTrigger === 'trades') {
+      }
+      // Série de gains consécutifs : chaque trade gagnant compte (même en drawdown), une perte remet à zéro.
+      // Les mouvements de capital (ajout, retrait, payout) ne touchent jamais cette série.
+      if (upTrigger === 'trades') {
+        if (res > 0) {
           ws++;
           if (upTrades > 0 && ws % upTrades === 0) {
             const delta = rmVarToPct(upVarType, upVarVal, runCap);
             rp = Math.min(rmax, Math.round((rp + delta) * 100) / 100);
           }
+        } else if (res < 0) {
+          ws = 0;
         }
       } else if (res < 0) {
-        ws = 0; // reset streak de gains sur perte
+        ws = 0;
       }
 
       // Déclencheur montée par % de gain : indépendant des plus hauts, basé sur une référence glissante
