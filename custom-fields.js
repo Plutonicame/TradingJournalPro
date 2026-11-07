@@ -1442,13 +1442,132 @@ function cfSetModeOverride(v) {
   lss('tj_mode_override_by_screen', map);
   cfRecomputeLayout();
 }
+// ── Détection AUTOMATIQUE du mode, d'après la PLACE RÉELLEMENT DISPONIBLE (pas la forme de l'écran) ──
+// On compare la largeur utile de la fenêtre à ce dont l'interface a besoin :
+//  - téléphone   : même en disposition verticale, la barre de navigation (2 lignes) ne tient plus
+//                  avec ses marges (ou fenêtre ≤ 700px) ;
+//  - PC vertical : on ne peut plus afficher 4 camemberts Win Rate sans abîmer leur visuel, ou la
+//                  barre de navigation sur une ligne devient trop serrée ;
+//  - PC normal   : 4 camemberts (mais pas 6) + barre de navigation à l'aise ;
+//  - ultra wide  : 6 camemberts + barre à l'aise.
+// La largeur de la barre est MESURÉE en direct (s'adapte si on ajoute des éléments) ; la largeur
+// minimale d'un camembert est CF_PIE_MIN_W. Marge de 40px avant de passer à un mode plus grand,
+// pour éviter que la mise en page clignote pile sur un seuil.
+const CF_MODE_RANK = {phone: 0, vertical: 1, normal: 2, ultrawide: 3};
+const CF_PIE_MIN_W = 250; // 195px de camembert + marges internes de la carte
+const CF_PIE_GAP = 16;
+const CF_UPGRADE_SLACK = 40;
+let _cfAutoMode = null;
+function cfMeasureNav() {
+  const b = document.body;
+  const saved = b.className;
+  const nm = document.querySelector('.nav-mobile'),
+    nd = document.querySelector('.nav-desktop');
+  if (!nm || !nd) return null;
+  let st = document.getElementById('cfProbeStyle');
+  if (!st) {
+    st = document.createElement('style');
+    st.id = 'cfProbeStyle';
+    st.textContent = `
+body.cf-probe-m .nav-desktop{display:none!important;}
+body.cf-probe-m .nav-mobile{display:block!important;}
+body.cf-probe-m .nav-mobile-row1,body.cf-probe-m .nav-mobile-row2{width:max-content!important;max-width:none!important;flex:none!important;}
+body.cf-probe-m .nav-mobile-clocks{flex:none!important;}
+body.cf-probe-d .nav-mobile{display:none!important;}
+body.cf-probe-d .nav-desktop{display:flex!important;width:max-content!important;}
+body.cf-probe-d .nav-desktop>*{flex-shrink:0!important;}`;
+    document.head.appendChild(st);
+  }
+  const strip = () =>
+    ['cf-mode-phone', 'cf-mode-vertical', 'cf-mode-normal', 'cf-mode-ultrawide', 'cf-nav-force-column'].forEach(c =>
+      b.classList.remove(c)
+    );
+  const out = {};
+  try {
+    // 1) menu mobile : ligne 1 + ligne 2, largeurs naturelles
+    strip();
+    b.classList.add('cf-probe-m');
+    const r1 = nm.querySelector('.nav-mobile-row1'),
+      r2 = nm.querySelector('.nav-mobile-row2');
+    const w1 = r1 ? r1.scrollWidth : 0,
+      w2 = r2 ? r2.scrollWidth : 0;
+    out.twoRows = Math.max(w1, w2); // menu sur 2 lignes (vertical / téléphone)
+    out.oneRow = w1 + w2; // les 2 lignes fusionnées en une (PC normal / ultra wide en colonne)
+    b.classList.remove('cf-probe-m');
+    // 2) barre PC classique : horloges centrées → il faut de la place de chaque côté
+    b.classList.add('cf-probe-d');
+    const clocks = nd.querySelector('.nav-clocks');
+    let left = 0,
+      right = 0,
+      after = false,
+      seenClocks = false;
+    Array.from(nd.children).forEach(ch => {
+      if (ch === clocks) {
+        seenClocks = true;
+        return;
+      }
+      const w = ch.getBoundingClientRect().width + 8;
+      if (!seenClocks) left += w;
+      else if (!(ch.style && ch.style.flex === '1 1 0%' && !ch.children.length)) right += w;
+    });
+    const cw = clocks ? clocks.getBoundingClientRect().width : 0;
+    out.desktop = cw + 2 * Math.max(left, right) + 40;
+  } finally {
+    b.className = saved;
+  }
+  return out;
+}
+function cfComputeAutoMode(extra) {
+  const de = document.documentElement;
+  const avail = de.clientWidth || window.innerWidth;
+  if (avail <= 700) return 'phone';
+  const nav = cfMeasureNav();
+  if (!nav || !nav.twoRows) {
+    // Mesure impossible (page pas prête) : repli sur l'ancienne détection par la forme de l'écran
+    if (window.matchMedia && window.matchMedia('(orientation:portrait)').matches) return 'vertical';
+    if (window.matchMedia && window.matchMedia('(min-aspect-ratio:2/1)').matches) return 'ultrawide';
+    return 'normal';
+  }
+  extra = extra || 0;
+  // Largeur utile pour les graphiques = fenêtre − marges de la page
+  let pad = 48;
+  try {
+    const pg = document.querySelector('.page.active') || document.querySelector('.page');
+    if (pg) {
+      const cs = getComputedStyle(pg);
+      pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    }
+  } catch (e) {}
+  const content = avail - Math.max(pad, 48);
+  const pies = n => n * CF_PIE_MIN_W + (n - 1) * CF_PIE_GAP;
+  const colMode = APP && APP.cfNavColumnByMode && APP.cfNavColumnByMode.normal;
+  const navOne = (colMode ? nav.oneRow : nav.desktop) + extra;
+  if (avail < nav.twoRows + extra * 0) return 'phone';
+  if (content >= pies(6) + extra && avail >= navOne) return 'ultrawide';
+  if (content >= pies(4) + extra && avail >= navOne) return 'normal';
+  return 'vertical';
+}
+function cfUpdateAutoMode() {
+  const last = _cfAutoMode;
+  let m = cfComputeAutoMode(0);
+  if (last && CF_MODE_RANK[m] > CF_MODE_RANK[last]) {
+    const m2 = cfComputeAutoMode(CF_UPGRADE_SLACK);
+    m = CF_MODE_RANK[m2] > CF_MODE_RANK[last] ? m2 : last;
+  }
+  _cfAutoMode = m;
+  return m !== last;
+}
 function cfScreenMode() {
   const forced = cfModeOverride();
   if (forced !== 'auto') return forced;
-  if (window.matchMedia && window.matchMedia('(max-width:700px)').matches) return 'phone';
-  if (window.matchMedia && window.matchMedia('(orientation:portrait)').matches) return 'vertical';
-  if (window.matchMedia && window.matchMedia('(min-aspect-ratio:2/1)').matches) return 'ultrawide';
-  return 'normal';
+  if (!_cfAutoMode) {
+    try {
+      cfUpdateAutoMode();
+    } catch (e) {
+      _cfAutoMode = 'normal';
+    }
+  }
+  return _cfAutoMode;
 }
 function cfIsMobile() {
   return cfScreenMode() === 'phone';
@@ -2939,16 +3058,26 @@ document.addEventListener('DOMContentLoaded', function () {
 // utilisés par cfScreenMode() (téléphone / portrait / ultra wide). Sans
 // effet si un mode est forcé manuellement (le mode ne peut alors plus
 // changer via ces seuils), mais inoffensif de les garder branchés.
-if (window.matchMedia) {
-  [
-    window.matchMedia('(max-width:700px)'),
-    window.matchMedia('(orientation:portrait)'),
-    window.matchMedia('(min-aspect-ratio:2/1)')
-  ].forEach(mq => {
-    if (mq.addEventListener) mq.addEventListener('change', cfRecomputeLayout);
-    else if (mq.addListener) mq.addListener(cfRecomputeLayout);
-  });
-}
+// Le mode est maintenant déduit de la PLACE DISPONIBLE : on le recalcule à chaque redimensionnement
+// de la fenêtre (ou changement d'écran), quand les polices sont chargées, et par une vérification
+// légère toutes les 3 s (les badges de la barre changent de largeur avec leurs valeurs).
+(function () {
+  let raf = 0;
+  const check = () => {
+    raf = 0;
+    try {
+      if (cfModeOverride() !== 'auto') return;
+      if (cfUpdateAutoMode()) cfRecomputeLayout();
+    } catch (e) {}
+  };
+  const schedule = () => {
+    if (!raf) raf = requestAnimationFrame(check);
+  };
+  window.addEventListener('resize', schedule);
+  window.addEventListener('load', schedule);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
+  setInterval(schedule, 3000);
+})();
 
 
 // ══ NOTES TYPES (journal de trading + fenêtre de modification) ══
