@@ -1498,13 +1498,15 @@ function computeRiskHistory(includeBT = false) {
   // ils changent le capital réel (donc le risque en €) mais jamais les séries ni les paliers de risque.
   const depEvs = lsAcc('tj_payouts', [])
     .filter(p => p && p.date)
-    .map(p => ({_dep: true, date: p.date, heure: p.heure || '', amount: -(p.amount || 0)}));
+    .map(p => ({_dep: true, _payout: !isDeposit(p), date: p.date, heure: p.heure || '', amount: -(p.amount || 0)}));
   const items = [...rmEvs, ...depEvs, ...sorted].sort(rmCmpDT);
   let rp = base,
     ws = 0,
     ls2 = 0;
   let runCap = CAPITAL();
   let highestEq = runCap;
+  let highDate = 'Départ',
+    highHeure = '';
   let appliedSteps = 0; // nombre de paliers de baisse déjà appliqués pour le drawdown en cours
   let upRefCap = runCap; // référence pour mesurer le % de gain (mode 'pct' en montée)
   let upAppliedSteps = 0; // nombre de paliers de hausse déjà appliqués depuis upRefCap
@@ -1526,11 +1528,31 @@ function computeRiskHistory(includeBT = false) {
   let downVarType = cfg0.downVarType,
     downVarVal = cfg0.downVarVal;
 
+  // Nombre de paliers de drawdown déjà franchis à l'instant présent (selon les réglages en vigueur)
+  const ddStepsNow = () => {
+    if (downTrigger !== 'pct' || !(highestEq > 0)) return 0;
+    const stepSize = downPct > 0 ? downPct : 5;
+    return Math.floor(((highestEq - runCap) / highestEq) * 100 / stepSize);
+  };
+
   items.forEach(t => {
     if (t._dep) {
       runCap += t.amount;
-      highestEq += t.amount;
-      upRefCap += t.amount;
+      if (t._payout) {
+        // PAYOUT : seul moment où les anciens plus hauts sont oubliés. La courbe repart de zéro :
+        // nouveau plus haut = capital après payout, drawdown remis à zéro.
+        highestEq = runCap;
+        highDate = t.date;
+        highHeure = t.heure || '';
+        appliedSteps = 0;
+        upRefCap = runCap;
+        upAppliedSteps = 0;
+      } else {
+        // Ajout / retrait manuel de capital : le plus haut suit l'évolution du capital (il bouge du même
+        // montant), donc ni faux drawdown ni faux nouveau plus haut.
+        highestEq += t.amount;
+        upRefCap += t.amount;
+      }
       return;
     }
     if (t._ev) {
@@ -1554,9 +1576,9 @@ function computeRiskHistory(includeBT = false) {
         downVarType = c.downVarType;
         downVarVal = c.downVarVal;
         if (baseChanged) rp = base; // nouveau risque de base → appliqué dès maintenant
-        // Nouvelle stratégie : compteurs repartis de zéro à partir du capital actuel
-        highestEq = runCap;
-        appliedSteps = 0;
+        // Nouvelle stratégie : séries remises à zéro. Le plus haut, lui, n'est JAMAIS oublié ;
+        // le drawdown déjà existant n'est pas re-sanctionné d'un coup (les paliers déjà franchis sont comptés comme appliqués).
+        appliedSteps = ddStepsNow();
         upRefCap = runCap;
         upAppliedSteps = 0;
         ws = 0;
@@ -1566,9 +1588,8 @@ function computeRiskHistory(includeBT = false) {
         if (!smart) {
           rp = base; // risque intelligent coupé → risque fixe de base à partir de ce moment
         } else {
-          // Réactivation : on repart du risque actuel avec des compteurs neufs
-          highestEq = runCap;
-          appliedSteps = 0;
+          // Réactivation : séries à zéro ; le plus haut est conservé (jamais remis à zéro)
+          appliedSteps = ddStepsNow();
           upRefCap = runCap;
           upAppliedSteps = 0;
           ws = 0;
@@ -1606,12 +1627,14 @@ function computeRiskHistory(includeBT = false) {
       realWS = 0;
       maxRealLS = Math.max(maxRealLS, realLS);
     }
+    // Le plus haut suit toujours l'évolution du capital (même risque intelligent coupé)
+    if (runCap > highestEq) {
+      highestEq = runCap;
+      highDate = t.date;
+      highHeure = t.heure || '';
+      appliedSteps = 0;
+    }
     if (smart) {
-      // Le « plus haut » ne sert qu'à mesurer le drawdown (baisses de risque)
-      if (runCap > highestEq) {
-        highestEq = runCap;
-        appliedSteps = 0;
-      }
       // Série de gains consécutifs : chaque trade gagnant compte (même en drawdown), une perte remet à zéro.
       // Les mouvements de capital (ajout, retrait, payout) ne touchent jamais cette série.
       if (upTrigger === 'trades') {
@@ -1689,7 +1712,8 @@ function computeRiskHistory(includeBT = false) {
     finalRealWs: realWS,
     finalRealLs: realLS,
     maxRealWs: maxRealWS,
-    maxRealLs: maxRealLS
+    maxRealLs: maxRealLS,
+    high: {value: highestEq, date: highDate, heure: highHeure}
   };
 }
 let _rrHistCache = null,
@@ -3751,8 +3775,37 @@ function drawEquity(period) {
   const g = ctx.createLinearGradient(0, 0, 0, 210);
   g.addColorStop(0, ftop);
   g.addColorStop(1, fbot);
+  // Dernier plus haut du capital (suit trades, ajouts et retraits ; repart de zéro après un payout)
+  let hi = null;
+  try {
+    hi = computeRiskHistory(!!BT_STATE.eq).high;
+  } catch (e) {}
+  const hiTxt = hi
+    ? 'Plus haut : ' +
+      hi.value.toLocaleString('fr-FR', {maximumFractionDigits: 2}) +
+      '€' +
+      (hi.date && hi.date !== 'Départ'
+        ? ' — ' + hi.date.split('-').reverse().join('/') + (hi.heure ? ' ' + hi.heure : '')
+        : ' — départ')
+    : '';
+  const hiPlugin = {
+    id: 'eqHigh',
+    afterDatasetsDraw(chart) {
+      if (!hi) return;
+      const {ctx: c, chartArea: a, scales} = chart;
+      const y = scales.y.getPixelForValue(hi.value);
+      c.save();
+      c.font = '11px sans-serif';
+      c.fillStyle = axC;
+      c.textAlign = 'right';
+      c.textBaseline = y - 14 < a.top ? 'top' : 'bottom';
+      c.fillText(hiTxt, a.right - 4, y - 14 < a.top ? y + 3 : y - 3);
+      c.restore();
+    }
+  };
   CH['eq'] = new Chart(ctx, {
     type: 'line',
+    plugins: [hiPlugin],
     data: {
       labels,
       datasets: [
@@ -3770,13 +3823,30 @@ function drawEquity(period) {
           pointBackgroundColor: lc,
           pointBorderColor: lc,
           pointHoverRadius: tr.map(t => (t._dep ? 5 : 4))
-        }
+        },
+        ...(hi
+          ? [
+              {
+                data: labels.map(() => hi.value),
+                borderColor: axC,
+                backgroundColor: axC,
+                borderWidth: 1,
+                borderDash: [6, 4],
+                pointRadius: 0,
+                pointHitRadius: 0,
+                pointHoverRadius: 0,
+                fill: false,
+                tension: 0
+              }
+            ]
+          : [])
       ]
     },
     options: {
       ...CO,
       interaction: {mode: 'index', intersect: false},
       onClick: (evt, elements) => {
+        elements = elements.filter(e => e.datasetIndex === 0);
         if (!elements.length) return;
         const t = tr[elements[0].index];
         if (t && t._dep) showDepositInfo(t);
@@ -3790,7 +3860,9 @@ function drawEquity(period) {
         tooltip: {
           callbacks: {
             label: i =>
-              (tr[i.dataIndex] && tr[i.dataIndex]._dep
+              i.datasetIndex === 1
+                ? ' ' + hiTxt
+                : (tr[i.dataIndex] && tr[i.dataIndex]._dep
                 ? ' ' + depLabel(tr[i.dataIndex]).name + ' : ' + depLabel(tr[i.dataIndex]).sign +
                   Math.abs(tr[i.dataIndex].res).toLocaleString('fr-FR') +
                   '€ → Capital : '
