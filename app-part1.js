@@ -3793,13 +3793,12 @@ function drawEquity(period) {
     afterDatasetsDraw(chart) {
       if (!hi) return;
       const {ctx: c, chartArea: a, scales} = chart;
-      const y = scales.y.getPixelForValue(hi.value);
       c.save();
       c.font = '11px sans-serif';
       c.fillStyle = axC;
-      c.textAlign = 'right';
-      c.textBaseline = y - 14 < a.top ? 'top' : 'bottom';
-      c.fillText(hiTxt, a.right - 4, y - 14 < a.top ? y + 3 : y - 3);
+      c.textAlign = 'left';
+      c.textBaseline = 'top';
+      c.fillText(hiTxt, a.left + 8, a.top + 4);
       c.restore();
     }
   };
@@ -3823,23 +3822,7 @@ function drawEquity(period) {
           pointBackgroundColor: lc,
           pointBorderColor: lc,
           pointHoverRadius: tr.map(t => (t._dep ? 5 : 4))
-        },
-        ...(hi
-          ? [
-              {
-                data: labels.map(() => hi.value),
-                borderColor: axC,
-                backgroundColor: axC,
-                borderWidth: 1,
-                borderDash: [6, 4],
-                pointRadius: 0,
-                pointHitRadius: 0,
-                pointHoverRadius: 0,
-                fill: false,
-                tension: 0
-              }
-            ]
-          : [])
+        }
       ]
     },
     options: {
@@ -3860,9 +3843,7 @@ function drawEquity(period) {
         tooltip: {
           callbacks: {
             label: i =>
-              i.datasetIndex === 1
-                ? ' ' + hiTxt
-                : (tr[i.dataIndex] && tr[i.dataIndex]._dep
+              (tr[i.dataIndex] && tr[i.dataIndex]._dep
                 ? ' ' + depLabel(tr[i.dataIndex]).name + ' : ' + depLabel(tr[i.dataIndex]).sign +
                   Math.abs(tr[i.dataIndex].res).toLocaleString('fr-FR') +
                   '€ → Capital : '
