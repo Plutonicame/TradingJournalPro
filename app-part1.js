@@ -1494,9 +1494,11 @@ function computeRiskHistory(includeBT = false) {
     : !!SMART();
   // Événements placés AVANT les trades en cas d'égalité date+heure (tri stable)
   // Ajouts de capital : font monter le capital courant (et ses repères) sans être des trades.
+  // Les payouts sont des mouvements de capital comme les autres (amount > 0 = retrait, < 0 = ajout) :
+  // ils changent le capital réel (donc le risque en €) mais jamais les séries ni les paliers de risque.
   const depEvs = lsAcc('tj_payouts', [])
-    .filter(isDeposit)
-    .map(p => ({_dep: true, date: p.date || '', heure: p.heure || '', amount: -(p.amount || 0)}));
+    .filter(p => p && p.date)
+    .map(p => ({_dep: true, date: p.date, heure: p.heure || '', amount: -(p.amount || 0)}));
   const items = [...rmEvs, ...depEvs, ...sorted].sort(rmCmpDT);
   let rp = base,
     ws = 0,
@@ -1713,7 +1715,7 @@ function getRiskHistMap() {
     RM_DOWN_VAR_VAL(),
     RMAX(),
     JSON.stringify(RM_EVENTS()),
-    JSON.stringify(lsAcc('tj_payouts', []).filter(isDeposit))
+    JSON.stringify(lsAcc('tj_payouts', []))
   ].join('|');
   if (_rrHistCache && _rrHistSig === sig) return _rrHistCache;
   const map = new Map();
@@ -3060,15 +3062,22 @@ function rmUndoEvent(id) {
   if (!ev) return;
   const rest = evs.filter(e => e.id !== id);
   if (ev.kind === 'smart') {
-    const prevOn = ev.prev != null ? !!ev.prev : !ev.on;
-    // La bascule suivante (si elle existe) repart du mode d'avant celle qu'on supprime ;
-    // sinon c'est le mode actuel qui revient à son état d'avant.
-    const next = rest
-      .filter(e => e.kind === 'smart' && rmCmpDT(e, ev) >= 0)
-      .sort(rmCmpDT)[0];
-    if (next) next.prev = prevOn;
-    else lssAcc('tj_smart_risk', prevOn);
+    // On rebâtit toute la chaîne des bascules dans l'ORDRE DE CRÉATION (et non par date/heure :
+    // deux bascules faites dans la même minute ont la même date/heure et se mélangeaient, ce qui
+    // faussait le mode de départ et remettait tout l'historique au risque de base).
+    // Mode au tout début = mode d'avant la 1re bascule ; chaque bascule restante repart du mode
+    // où la précédente l'a laissé ; le mode actuel = celui où la chaîne se termine.
+    const first = evs.find(e => e.kind === 'smart');
+    let cur = first.prev != null ? !!first.prev : !first.on;
+    rest.forEach(e => {
+      if (e.kind !== 'smart') return;
+      e.prev = cur;
+      cur = !!e.on;
+    });
+    lssAcc('tj_smart_risk', cur);
   } else if (ev.kind === 'config' && ev.prev && ev.cfg) {
+    // Événements créés APRÈS celui qu'on supprime (ordre de création, fiable même à égalité de minute)
+    const afterIds = new Set(evs.slice(evs.indexOf(ev) + 1).map(e => e.id));
     const changed = Object.keys(RM_CFG_KEYS).filter(k => ev.prev[k] !== ev.cfg[k]);
     // Réglages actuels : on remet l'ancienne valeur seulement si personne ne l'a re-modifiée depuis
     changed.forEach(k => {
@@ -3076,7 +3085,7 @@ function rmUndoEvent(id) {
     });
     // Modifications de réglages plus récentes : on retire la valeur de cet événement de leurs photos
     rest.forEach(e => {
-      if (e.kind !== 'config' || !e.prev || !e.cfg || rmCmpDT(e, ev) < 0) return;
+      if (e.kind !== 'config' || !e.prev || !e.cfg || !afterIds.has(e.id)) return;
       changed.forEach(k => {
         if (e.prev[k] === ev.cfg[k]) e.prev[k] = ev.prev[k];
         if (e.cfg[k] === ev.cfg[k]) e.cfg[k] = ev.prev[k];
