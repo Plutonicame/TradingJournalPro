@@ -24,6 +24,8 @@
 
   var ICON_CAL =
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="11" rx="1.6"/><path d="M2 6.5h12M5.2 1.8v2.4M10.8 1.8v2.4"/></svg>';
+  var ICON_AMT =
+    '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.6v12.8"/><path d="M11 4.7C10.5 3.8 9.4 3.2 8 3.2c-1.7 0-3 .9-3 2.2 0 3.1 6 1.6 6 4.7 0 1.3-1.4 2.3-3 2.3-1.5 0-2.7-.7-3.2-1.7"/></svg>';
   var ICON_CLK =
     '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.4V8l2.4 1.6"/></svg>';
 
@@ -51,7 +53,16 @@
     '.dtc-list{max-height:182px;overflow-y:auto;display:flex;flex-direction:column;gap:2px;position:relative;' +
     'scrollbar-width:none;-ms-overflow-style:none;}' +
     '.dtc-list::-webkit-scrollbar{display:none;width:0;height:0;}' +
-    '.dtc-list .pcal-day{flex:none;width:100%;}';
+    '.dtc-list .pcal-day{flex:none;width:100%;}' +
+    // Champs « Capital & Risk » : chaque case prend exactement la largeur de son titre
+    '.fit-fg{width:max-content;}' +
+    '.fit-fg>label{white-space:nowrap;}' +
+    '.fit-fg>input{width:0!important;min-width:100%;box-sizing:border-box;}' +
+    '.fit-fg>.dtc{width:100%;}' +
+    '.fit-fg>.dtc .dtc-time{height:var(--fit-h,auto);box-sizing:border-box;padding-top:0;padding-bottom:0;}' +
+    // saisie du montant (bouton $) dans la case
+    '.dtc-ed{all:unset;box-sizing:border-box;flex:1;min-width:0;font-size:12px;font-family:var(--mono,monospace);' +
+    'color:var(--fg-input-fg-select-fg-textarea-color,#e2e8f0);border-bottom:1px solid var(--fg-dtc-btn-active,#8b9bff);}';
 
   function injectCss() {
     if (document.getElementById('dtc-css')) return;
@@ -353,8 +364,13 @@
     ui.innerHTML =
       '<span class="dtc-v"></span>' +
       '<button type="button" class="dtc-b" data-k="date" title="Date" aria-label="Date">' + ICON_CAL + '</button>' +
-      '<button type="button" class="dtc-b" data-k="time" title="Heure" aria-label="Heure">' + ICON_CLK + '</button>';
+      '<button type="button" class="dtc-b" data-k="time" title="Heure" aria-label="Heure">' + ICON_CLK + '</button>' +
+      (box.getAttribute('data-amt')
+        ? '<button type="button" class="dtc-b" data-k="amt" title="Montant" aria-label="Montant">' + ICON_AMT + '</button>'
+        : '');
     box.appendChild(ui);
+    var aEl = box.getAttribute('data-amt') ? document.getElementById(box.getAttribute('data-amt')) : null;
+    var bA = ui.querySelector('[data-k="amt"]');
 
     var bD = ui.querySelector('[data-k="date"]');
     var bT = ui.querySelector('[data-k="time"]');
@@ -367,7 +383,9 @@
       if (ro) txt = [fmtDate(dEl.value), tEl.value].filter(Boolean).join(' · ');
       else if (shown === 'date') txt = fmtDate(dEl.value);
       else if (shown === 'time') txt = tEl.value;
+      else if (shown === 'amt' && aEl) txt = aEl.value ? String(aEl.value).replace('.', ',') + ' €' : box.getAttribute('data-amt-ph') || '—';
       else txt = '';
+      if (bA) bA.classList.toggle('on', shown === 'amt');
       if (out.textContent !== txt) out.textContent = txt;
       var title = shown === 'date' ? 'Date — clique à nouveau pour modifier' : 'Date';
       bD.classList.toggle('on', shown === 'date');
@@ -388,6 +406,46 @@
         }
       };
     }
+    // Montant : 1er clic → affiche ; 2e clic → la valeur devient modifiable sur place
+    function editAmount() {
+      if (ui.querySelector('.dtc-ed')) return;
+      var inp = document.createElement('input');
+      inp.className = 'dtc-ed';
+      inp.type = 'text';
+      inp.setAttribute('inputmode', 'decimal');
+      inp.value = aEl.value ? String(aEl.value).replace('.', ',') : '';
+      inp.placeholder = box.getAttribute('data-amt-ph') || '';
+      out.style.display = 'none';
+      ui.insertBefore(inp, out);
+      inp.focus();
+      inp.select();
+      var done = false;
+      function commit() {
+        if (done) return;
+        done = true;
+        var raw = String(inp.value || '').replace(/\s/g, '').replace(',', '.').replace(/^[−–]/, '-');
+        var num = parseFloat(raw);
+        aEl.value = isNaN(num) ? '' : aEl.type === 'number' ? String(num) : raw;
+        inp.remove();
+        out.style.display = '';
+        render();
+      }
+      inp.addEventListener('blur', commit);
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === 'Escape') {
+          e.preventDefault();
+          commit();
+        }
+      });
+    }
+    if (bA && aEl)
+      bA.addEventListener('click', function (e) {
+        e.preventDefault();
+        if (shown !== 'amt') {
+          shown = 'amt';
+          render();
+        } else editAmount();
+      });
     bD.addEventListener('click', click('date', dEl));
     bT.addEventListener('click', click('time', tEl));
     dEl.addEventListener('change', render);
@@ -405,6 +463,16 @@
   // Les valeurs sont aussi modifiées par le code (nouveau trade, ouverture
   // d'un trade à modifier) sans événement : on resynchronise l'affichage.
   function refreshAll() {
+    // « Payout » : même largeur que « Modification du capital » (harmonie)
+    // Les cases date/heure/montant ont exactement la hauteur des autres champs de la ligne
+    var cap = document.getElementById('capInput');
+    if (cap && cap.offsetHeight > 0) document.documentElement.style.setProperty('--fit-h', cap.offsetHeight + 'px');
+    var dep = document.getElementById('depositFg'),
+      pay = document.getElementById('payoutFg');
+    if (dep && pay && dep.offsetWidth > 0) {
+      var w = dep.getBoundingClientRect().width + 'px';
+      if (pay.style.width !== w) pay.style.width = w;
+    }
     var list = document.querySelectorAll('.dtc');
     for (var i = 0; i < list.length; i++) {
       if (list[i]._dtcRender) list[i]._dtcRender();
