@@ -3220,9 +3220,15 @@ function addPayout() {
   const v = parseFloat(document.getElementById('payoutInput').value) || 0;
   if (v <= 0) return;
   const payouts = lsAcc('tj_payouts', []);
-  payouts.push({date: new Date().toISOString().split('T')[0], amount: v});
+  // Date et heure choisies (même sélecteur que Début/Fin d'un trade) ; à défaut : maintenant
+  const now = rmNowStamp();
+  const dEl = document.getElementById('payoutDate'),
+    hEl = document.getElementById('payoutHeure');
+  payouts.push({date: (dEl && dEl.value) || now.date, heure: (hEl && hEl.value) || now.heure, amount: v});
   lssAcc('tj_payouts', payouts);
   document.getElementById('payoutInput').value = '';
+  if (dEl) dEl.value = '';
+  if (hEl) hEl.value = '';
   renderPayouts();
   updateNavBadges();
   updateKPIs();
@@ -3326,16 +3332,24 @@ function addDeposit() {
 }
 function renderPayouts() {
   const payouts = lsAcc('tj_payouts', []);
-  const chip = (color, sign, amount, date, i) => `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);">
+  // Date/heure du prochain payout : par défaut maintenant (modifiables via les boutons calendrier / horloge)
+  {
+    const now = rmNowStamp();
+    const dEl = document.getElementById('payoutDate'),
+      hEl = document.getElementById('payoutHeure');
+    if (dEl && !dEl.value) dEl.value = now.date;
+    if (hEl && !hEl.value) hEl.value = now.heure;
+  }
+  const chip = (color, sign, amount, date, i, heure) => `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);">
     <span style="color:${color}">${sign}${amount.toLocaleString('fr-FR')}€</span>
-    <span style="color:var(--muted)">${date || ''}</span>
+    <span style="color:var(--muted)">${date || ''}${heure ? ' ' + heure : ''}</span>
     <button onclick="removePayout(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;">×</button>
   </div>`;
   // payoutTotal removed from modifs, shown in KPI instead
   const hist = document.getElementById('payoutHistory');
   if (hist)
     hist.innerHTML = payouts
-      .map((p, i) => (isDeposit(p) ? '' : chip('var(--gold)', '-', p.amount, p.date, i)))
+      .map((p, i) => (isDeposit(p) ? '' : chip('var(--gold)', '-', p.amount, p.date, i, p.heure)))
       .join('');
   const dh = document.getElementById('depositHistory');
   if (dh)
@@ -3343,8 +3357,8 @@ function renderPayouts() {
       .map((p, i) =>
         isDeposit(p)
           ? p.amount > 0
-            ? chip('var(--gold)', '−', p.amount, p.date, i)
-            : chip('var(--green)', '+', -p.amount, p.date, i)
+            ? chip('var(--gold)', '−', p.amount, p.date, i, p.heure)
+            : chip('var(--green)', '+', -p.amount, p.date, i, p.heure)
           : ''
       )
       .join('');
