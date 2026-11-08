@@ -3318,10 +3318,15 @@ function addDeposit() {
   const v = Math.round((parseFloat(raw) || 0) * 100) / 100; // jusqu'au centime
   if (!v) return;
   const list = lsAcc('tj_payouts', []);
+  // Date et heure choisies (même sélecteur que Début/Fin d'un trade) ; à défaut : maintenant
   const st = rmNowStamp();
-  list.push({date: st.date, heure: st.heure, amount: -v, kind: 'deposit', note: v < 0 ? 'Retrait manuel de capital' : 'Ajout manuel de capital'});
+  const dEl = document.getElementById('depositDate'),
+    hEl = document.getElementById('depositHeure');
+  list.push({date: (dEl && dEl.value) || st.date, heure: (hEl && hEl.value) || st.heure, amount: -v, kind: 'deposit', note: v < 0 ? 'Retrait manuel de capital' : 'Ajout manuel de capital'});
   lssAcc('tj_payouts', list);
   el.value = '';
+  if (dEl) dEl.value = '';
+  if (hEl) hEl.value = '';
   renderPayouts();
   updateNavBadges();
   updateKPIs();
@@ -3339,6 +3344,10 @@ function renderPayouts() {
       hEl = document.getElementById('payoutHeure');
     if (dEl && !dEl.value) dEl.value = now.date;
     if (hEl && !hEl.value) hEl.value = now.heure;
+    const dd = document.getElementById('depositDate'),
+      dh = document.getElementById('depositHeure');
+    if (dd && !dd.value) dd.value = now.date;
+    if (dh && !dh.value) dh.value = now.heure;
   }
   const chip = (color, sign, amount, date, i, heure) => `<div style="display:inline-flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;font-family:var(--mono);">
     <span style="color:${color}">${sign}${amount.toLocaleString('fr-FR')}€</span>
