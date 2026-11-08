@@ -56,7 +56,7 @@
     '.dtc-list .pcal-day{flex:none;width:100%;}' +
     // Champs « Capital & Risk » : chaque case prend exactement la largeur de son titre
     '.fit-fg{width:max-content;}' +
-    '.fit-fg>label{white-space:nowrap;}' +
+    '.fit-fg>label{white-space:nowrap;display:block;width:max-content;}' +
     '.fit-fg>input{width:0!important;min-width:100%;box-sizing:border-box;}' +
     '.fit-fg>.dtc{width:100%;}' +
     '.fit-fg>.dtc .dtc-time{height:var(--fit-h,auto);box-sizing:border-box;padding-top:0;padding-bottom:0;}' +
@@ -378,12 +378,13 @@
     var shown = ''; // '' | 'date' | 'time'
 
     function render() {
+      if (out.isContentEditable) return; // saisie du montant en cours : on n'écrase rien
       var ro = !!box.closest('.cp-readonly'); // fiche en lecture seule : tout est affiché
       var txt;
       if (ro) txt = [fmtDate(dEl.value), tEl.value].filter(Boolean).join(' · ');
       else if (shown === 'date') txt = fmtDate(dEl.value);
       else if (shown === 'time') txt = tEl.value;
-      else if (shown === 'amt' && aEl) txt = aEl.value ? String(aEl.value).replace('.', ',') + ' €' : box.getAttribute('data-amt-ph') || '—';
+      else if (shown === 'amt' && aEl) txt = aEl.value ? String(aEl.value).replace('.', ',') + ' €' : '';
       else txt = '';
       if (bA) bA.classList.toggle('on', shown === 'amt');
       if (out.textContent !== txt) out.textContent = txt;
@@ -408,35 +409,57 @@
     }
     // Montant : 1er clic → affiche ; 2e clic → la valeur devient modifiable sur place
     function editAmount() {
-      if (ui.querySelector('.dtc-ed')) return;
-      var inp = document.createElement('input');
-      inp.className = 'dtc-ed';
-      inp.type = 'text';
-      inp.setAttribute('inputmode', 'decimal');
-      inp.value = aEl.value ? String(aEl.value).replace('.', ',') : '';
-      inp.placeholder = box.getAttribute('data-amt-ph') || '';
-      out.style.display = 'none';
-      ui.insertBefore(inp, out);
-      inp.focus();
-      inp.select();
+      if (out.isContentEditable) return;
+      out.textContent = aEl.value ? String(aEl.value).replace('.', ',') : '';
+      out.contentEditable = 'true';
+      out.spellcheck = false;
+      out.setAttribute('inputmode', 'decimal');
+      out.style.cursor = 'text';
+      out.style.outline = 'none';
+      out.style.textOverflow = 'clip';
+      out.focus();
+      var sel = window.getSelection(),
+        rg = document.createRange();
+      rg.selectNodeContents(out);
+      rg.collapse(false); // curseur clignotant à la fin
+      sel.removeAllRanges();
+      sel.addRange(rg);
       var done = false;
+      function onInput() {
+        var clean = out.textContent.replace(/[^0-9.,\-−–\s]/g, '');
+        if (clean !== out.textContent) {
+          out.textContent = clean;
+          var r2 = document.createRange();
+          r2.selectNodeContents(out);
+          r2.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(r2);
+        }
+      }
       function commit() {
         if (done) return;
         done = true;
-        var raw = String(inp.value || '').replace(/\s/g, '').replace(',', '.').replace(/^[−–]/, '-');
+        out.removeEventListener('input', onInput);
+        out.removeEventListener('blur', commit);
+        out.removeEventListener('keydown', onKey);
+        var raw = String(out.textContent || '').replace(/\s/g, '').replace(',', '.').replace(/^[−–]/, '-');
         var num = parseFloat(raw);
         aEl.value = isNaN(num) ? '' : aEl.type === 'number' ? String(num) : raw;
-        inp.remove();
-        out.style.display = '';
+        out.contentEditable = 'false';
+        out.style.cursor = '';
+        out.style.textOverflow = '';
         render();
       }
-      inp.addEventListener('blur', commit);
-      inp.addEventListener('keydown', function (e) {
+      function onKey(e) {
         if (e.key === 'Enter' || e.key === 'Escape') {
           e.preventDefault();
           commit();
+          out.blur();
         }
-      });
+      }
+      out.addEventListener('input', onInput);
+      out.addEventListener('blur', commit);
+      out.addEventListener('keydown', onKey);
     }
     if (bA && aEl)
       bA.addEventListener('click', function (e) {
@@ -467,6 +490,16 @@
     // Les cases date/heure/montant ont exactement la hauteur des autres champs de la ligne
     var cap = document.getElementById('capInput');
     if (cap && cap.offsetHeight > 0) document.documentElement.style.setProperty('--fit-h', cap.offsetHeight + 'px');
+    // Chaque case = largeur de son titre + un quart (5/4)
+    var fgs = document.querySelectorAll('.fit-fg');
+    for (var q = 0; q < fgs.length; q++) {
+      var lb = fgs[q].querySelector(':scope>label');
+      if (lb && lb.offsetWidth > 0) {
+        var wq = Math.round(lb.offsetWidth * 1.25) + 'px';
+        if (fgs[q].style.width !== wq) fgs[q].style.width = wq;
+      }
+    }
+    // « Payout » : même largeur que « Modification du capital » (harmonie)
     var dep = document.getElementById('depositFg'),
       pay = document.getElementById('payoutFg');
     if (dep && pay && dep.offsetWidth > 0) {
