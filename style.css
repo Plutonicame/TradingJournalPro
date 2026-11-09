@@ -64,6 +64,15 @@
   --comp-bg: #161d2e;
   --comp-axis: #64748b;
   --comp-grid: rgba(100, 116, 139, 0.1);
+  --dur-bg: #161d2e;
+  --dur-pos: rgba(0, 229, 160, 0.8);
+  --dur-neg: rgba(239, 68, 68, 0.8);
+  --dur-axis: #64748b;
+  --dur-grid: rgba(100, 116, 139, 0.1);
+  --dur-cross: #8b9bff;
+  --dur-cross-bg: #8b9bff;
+  --dur-cross-tx: #0b0f19;
+  --dur-hl: rgba(139, 155, 255, 0.12);
   --conf-pos: rgba(0, 229, 160, 0.8);
   --conf-neg: rgba(239, 68, 68, 0.8);
   --cal-pos-bg: rgba(0, 229, 160, 0.16);

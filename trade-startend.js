@@ -55,6 +55,10 @@
     '.dtc-list::-webkit-scrollbar{display:none;width:0;height:0;}' +
     '.dtc-list .pcal-day{flex:none;width:100%;}' +
     // Champs « Capital & Risk » : chaque case prend exactement la largeur de son titre
+    // case « Fin » non remplie à l'ajout du trade : teinte rouge (couleurs des messages d'erreur du thème)
+    '.dtc.dtc-err .dtc-ui{background:var(--toast-err-bg,#2a1218);border-color:var(--toast-err-bd,#6b2433);}' +
+    '.dtc.dtc-err .dtc-v{color:var(--toast-err-tx,#fb7185);}' +
+    '.dtc.dtc-err .dtc-b{color:var(--toast-err-tx,#fb7185);}' +
     '.fit-fg{width:max-content;}' +
     '.fit-fg>label{white-space:nowrap;display:block;width:max-content;}' +
     '.fit-fg>input{width:0!important;min-width:100%;box-sizing:border-box;}' +
@@ -508,6 +512,11 @@
     }
     var list = document.querySelectorAll('.dtc');
     for (var i = 0; i < list.length; i++) {
+      // l'heure de fin est remplie : on retire la teinte d'erreur
+      if (list[i].classList.contains('dtc-err')) {
+        var te = list[i].querySelector('.dtc-time');
+        if (te && te.value) list[i].classList.remove('dtc-err');
+      }
       if (list[i]._dtcRender) list[i]._dtcRender();
     }
   }

@@ -83,6 +83,7 @@ const CF_BUILTIN_CHARTS = [
   {id: 'risk', label: 'Risk Management'},
   {id: 'pie', label: 'Win Rate'},
   {id: 'mgmt', label: 'Impact du management'},
+  {id: 'dur', label: 'Durée des trades'},
   {id: 'conf', label: 'Par confluence'},
   {id: 'pairs', label: 'Par paire / actif'},
   {id: 'sessions', label: 'Par session'},
@@ -335,6 +336,21 @@ function cfEnsureOrders() {
     APP.cfChartOrderByMode[m] = APP.cfChartOrderByMode[m].filter(
       id => builtinChartIds.has(id) || chartFieldIds.has(id)
     );
+    // Graphique natif ajouté après coup (ex. « Durée des trades ») absent d'un ordre déjà enregistré :
+    // on l'insère juste après son prédécesseur dans la liste d'origine.
+    CF_BUILTIN_CHARTS.forEach((c, bi) => {
+      const ord = APP.cfChartOrderByMode[m];
+      if (ord.includes(c.id)) return;
+      let at = 0;
+      for (let k = bi - 1; k >= 0; k--) {
+        const p = ord.indexOf(CF_BUILTIN_CHARTS[k].id);
+        if (p >= 0) {
+          at = p + 1;
+          break;
+        }
+      }
+      ord.splice(at, 0, c.id);
+    });
     // Une liaison n'a de sens que si ses 2 graphiques existent encore ET
     // sont toujours immédiatement adjacents (dans ce sens précis) dans
     // l'ordre de CE mode — sinon on la laisse tomber silencieusement.
@@ -942,7 +958,8 @@ function cfEnsureChartsContainer() {
       cPairs: 'pairs',
       cSessions: 'sessions',
       cJours: 'jours',
-      cTF: 'tf'
+      cTF: 'tf',
+      cDur: 'dur'
     };
     Array.from(compDiv.children).forEach(card => {
       const canvas = card.querySelector('canvas');
@@ -1603,7 +1620,7 @@ const CF_CHART_MAX_PER_ROW = {
 function cfChartGroup(el) {
   const id = el.dataset.chartId;
   if (id === 'pie') return 'pie';
-  if (id === 'mgmt') return 'barv';
+  if (id === 'mgmt' || id === 'dur') return 'barv';
   if (id === 'conf' || id === 'pairs' || id === 'sessions' || id === 'jours' || id === 'tf')
     return 'other';
   const f = APP.cfFields.find(x => x.id === id);
@@ -2862,9 +2879,25 @@ function cfToggleNavColumn() {
 // RÉGLAGES" (repérées via leur data-tvar, stable même si le titre affiché
 // est renommé) — pour l'instant : mode d'affichage forcé + toggle nav. Ne
 // touche pas à la carte "Champs personnalisés" (cfEnsureCard), gérée à part.
+// Réglage de la largeur des colonnes du graphique « Durée des trades »
+function cfDurBucketChanged() {
+  const n = document.getElementById('durBucketN'),
+    u = document.getElementById('durBucketUnit');
+  if (!n || !u || !(parseFloat(n.value) >= 1)) return;
+  if (typeof durSetBucket === 'function') durSetBucket(n.value, u.value);
+}
+function cfDurBucketFill() {
+  const n = document.getElementById('durBucketN'),
+    u = document.getElementById('durBucketUnit');
+  if (!n || !u || typeof durBucketCfg !== 'function') return;
+  const c = durBucketCfg();
+  if (document.activeElement !== n) n.value = c.n;
+  u.value = c.unit;
+}
 function cfEnsureNavToggleCard() {
   if (document.getElementById('cfNavCard')) {
     cfRefreshPrefsCard();
+    cfDurBucketFill();
     return;
   }
   const anchorTitle = document.querySelector('[data-tvar="--crt-riskreglages"]');
@@ -2894,9 +2927,25 @@ function cfEnsureNavToggleCard() {
         <div class="tgl-track" id="cfTglNavColumn" onclick="cfToggleNavColumn()"><div class="tgl-thumb"></div></div>
         <span id="cfNavColumnLbl" style="color:var(--muted)">Désactivé</span>
       </div>
+      <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border,#1e2a3a);">
+        <div class="mod-col-title" style="margin-bottom:10px;" data-editable>RÉGLAGE — GRAPHIQUE « DURÉE DES TRADES »</div>
+        <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
+          <span data-editable style="font-size:12px;color:var(--muted);padding-bottom:9px;">Afficher une colonne toutes les</span>
+          <div class="fg" style="width:80px;"><label data-editable>Nombre</label><input type="number" id="durBucketN" min="1" step="1" onchange="cfDurBucketChanged()" oninput="cfDurBucketChanged()"></div>
+          <div class="fg" style="width:130px;"><label data-editable>Unité</label>
+            <select id="durBucketUnit" onchange="cfDurBucketChanged()">
+              <option value="s">secondes</option>
+              <option value="min">minutes</option>
+              <option value="h">heures</option>
+              <option value="j">jours</option>
+            </select></div>
+        </div>
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;">Les heures de trade sont enregistrées à la minute : en secondes, les colonnes ne se remplissent que par minutes entières.</div>
+      </div>
     </div>`;
   insertBeforeEl.parentNode.insertBefore(card, insertBeforeEl);
   cfRefreshPrefsCard();
+  cfDurBucketFill();
 }
 
 // ── Mode stylo : police + taille indépendante PC/téléphone pour le libellé

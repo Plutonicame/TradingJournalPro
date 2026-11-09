@@ -2095,6 +2095,20 @@ function addTrade() {
     document.getElementById('f-date')?.focus();
     return;
   }
+  // Heure de fin obligatoire : sans elle, le graphique « Durée des trades » ne peut pas compter le trade.
+  if (!t.heureFin) {
+    showSync("⚠ Attention, vous n'avez pas mis d'heure de fin", '#f59e0b');
+    const fin = document.getElementById('f-heure-fin');
+    const cell = fin && fin.closest('.dtc');
+    if (cell) {
+      cell.classList.add('dtc-err'); // case teintée avec les couleurs des messages d'erreur
+      try {
+        cell.scrollIntoView({block: 'center', behavior: 'smooth'});
+      } catch (e) {}
+    }
+    return;
+  }
+  if (!t.dateFin) t.dateFin = t.date; // heure de fin saisie sans date de fin : même jour que le début
   t.id = newTradeId();
   tjpRunTradeHooks('add', t);
   APP.trades.unshift(t);
@@ -2473,6 +2487,7 @@ const TITLE_DEFAULTS = {
   '--ct-comp-sessions': '#00e5a0',
   '--ct-comp-jours': '#00e5a0',
   '--ct-comp-tf': '#00e5a0',
+  '--ct-dur': '#00e5a0',
   '--crt-top5': '#00e5a0',
   '--crt-pires5': '#ef4444',
   '--crt-assistant': '#00e5a0',
@@ -3555,9 +3570,10 @@ const ST = {
   pairs: 'tout',
   sessions: 'tout',
   jours: 'tout',
-  tf: 'tout'
+  tf: 'tout',
+  dur: 'tout'
 };
-const MODE = {conf: false, pairs: false, sessions: false, jours: false, tf: false};
+const MODE = {conf: false, pairs: false, sessions: false, jours: false, tf: false, dur: false};
 
 function filterT(period) {
   const now = new Date(),
@@ -3598,6 +3614,7 @@ const BT_STATE = {
   sessions: false,
   jours: false,
   tf: false,
+  dur: false,
   top5: false,
   cal: false,
   pc: false,
@@ -3625,6 +3642,7 @@ function redrawForKey(k) {
     drawComp('cSessions', 'sessions', 'session', ST.sessions, MODE.sessions);
   else if (k === 'jours') drawJours(ST.jours);
   else if (k === 'tf') drawComp('cTF', 'tf', 'tf', ST.tf, MODE.tf, true);
+  else if (k === 'dur') drawDur(ST.dur);
   else if (k === 'top5') renderTop5();
   else if (k === 'cal') renderCalendar();
   else if (k === 'hist') renderTable();
@@ -4348,6 +4366,327 @@ function drawJours(period) {
     }
   });
 }
+
+// ══ GRAPHIQUE « DURÉE DES TRADES » ══
+// Barres verticales : une colonne par tranche de durée (réglable dans Paramètres > Préférences :
+// « afficher une colonne toutes les [n] [unité] », par défaut 30 min). La durée d'un trade va de
+// Début (date + heure) à Fin (date fin + heure fin). Trade de 20 min avec des tranches de 30 min
+// → première colonne (0 – 30 min) ; 30 min pile → colonne suivante (30 min – 1 h).
+// Axe gauche : gain (€) ou win rate (%) selon le bouton €/%. Curseur en croix, zoom à la molette,
+// glisser pour se déplacer, double-clic pour tout revoir.
+const DUR_UNIT_SEC = {s: 1, min: 60, h: 3600, j: 86400};
+function durBucketCfg() {
+  const c = ls('tj_dur_bucket', null) || {};
+  const n = Math.max(1, Math.floor(parseFloat(c.n)) || 30);
+  const unit = DUR_UNIT_SEC[c.unit] ? c.unit : 'min';
+  return {n, unit};
+}
+function durFmt(sec) {
+  sec = Math.round(sec);
+  if (sec <= 0) return '0';
+  if (sec < 60) return sec + ' s';
+  if (sec < 3600) {
+    const m = Math.floor(sec / 60),
+      r = sec % 60;
+    return m + ' min' + (r ? ' ' + r + ' s' : '');
+  }
+  if (sec < 86400) {
+    const h = Math.floor(sec / 3600),
+      m = Math.round((sec % 3600) / 60);
+    return h + ' h' + (m ? ' ' + String(m).padStart(2, '0') : '');
+  }
+  const d = Math.floor(sec / 86400),
+    h = Math.round((sec % 86400) / 3600);
+  return d + ' j' + (h ? ' ' + h + ' h' : '');
+}
+// Durée d'un trade en secondes (null si Début ou Fin incomplet / incohérent)
+function tradeDurSec(t) {
+  if (!t || !t.date || !t.heure || !t.dateFin || !t.heureFin) return null;
+  const a = new Date(t.date + 'T' + t.heure + ':00').getTime(),
+    b = new Date(t.dateFin + 'T' + t.heureFin + ':00').getTime();
+  if (isNaN(a) || isNaN(b) || b < a) return null;
+  return Math.round((b - a) / 1000);
+}
+function durSetBucket(n, unit) {
+  lss('tj_dur_bucket', {n: Math.max(1, Math.floor(parseFloat(n)) || 30), unit: DUR_UNIT_SEC[unit] ? unit : 'min'});
+  if (typeof drawDur === 'function') drawDur(ST.dur);
+}
+function drawDur(period) {
+  const cv = document.getElementById('cDur');
+  if (!cv) return;
+  period = period || ST.dur || 'tout';
+  destroy('dur');
+  const note = document.getElementById('durNote');
+  const hint = 'molette : zoom · glisser : déplacer · double-clic : tout voir';
+  const tr = btFilter('dur', period);
+  const withDur = [];
+  let skipped = 0;
+  tr.forEach(t => {
+    const d = tradeDurSec(t);
+    if (d === null) skipped++;
+    else withDur.push({t, d});
+  });
+  const skipTxt = skipped
+    ? skipped + ' trade' + (skipped > 1 ? 's' : '') + ' sans heure de fin non compté' + (skipped > 1 ? 's' : '') + ' · '
+    : '';
+  if (!withDur.length) {
+    if (note) note.textContent = skipTxt + 'aucun trade avec une durée sur cette période';
+    return;
+  }
+  // Tranches
+  const cfg = durBucketCfg();
+  const unitSec = DUR_UNIT_SEC[cfg.unit];
+  let S = cfg.n * unitSec;
+  const maxD = withDur.reduce((m, x) => Math.max(m, x.d), 0);
+  let adjusted = false;
+  if (Math.floor(maxD / S) + 1 > 2000) {
+    S = Math.ceil(maxD / 1999 / unitSec) * unitSec;
+    adjusted = true;
+  }
+  const nb = Math.floor(maxD / S) + 1;
+  const pnl = new Array(nb).fill(0),
+    wins = new Array(nb).fill(0),
+    tot = new Array(nb).fill(0),
+    list = Array.from({length: nb}, () => []);
+  withDur.forEach(({t, d}) => {
+    const i = Math.floor(d / S);
+    pnl[i] += t.res || 0;
+    if (t.res > 0) wins[i]++;
+    tot[i]++;
+    list[i].push(t);
+  });
+  const pct = !!MODE.dur;
+  const data = pnl.map((v, i) => (!tot[i] ? null : pct ? Math.round((wins[i] / tot[i]) * 100) : Math.round(v * 100) / 100));
+  const labels = pnl.map((_, i) => durFmt(i * S));
+  const range = i => durFmt(i * S) + ' – ' + durFmt((i + 1) * S);
+  if (note)
+    note.textContent =
+      skipTxt + 'une colonne = ' + durFmt(S) + (adjusted ? ' (agrandi automatiquement)' : '') + ' · ' + hint;
+
+  const posC = gc('--dur-pos') || 'rgba(0,229,160,.8)',
+    negC = gc('--dur-neg') || 'rgba(239,68,68,.8)';
+  const axC = gc('--dur-axis') || '#64748b',
+    grC = gc('--dur-grid') || 'rgba(100,116,139,.1)';
+  const crossC = gc('--dur-cross') || '#8b9bff',
+    crossBg = gc('--dur-cross-bg') || '#8b9bff',
+    crossTx = gc('--dur-cross-tx') || '#0b0f19',
+    hlC = gc('--dur-hl') || 'rgba(139,155,255,.12)';
+  const fmtY = v => (pct ? v + '%' : (v >= 0 ? '+' : '') + v.toLocaleString('fr-FR') + '€');
+
+  // Plugin : curseur en croix (style TradingView) + surbrillance de la colonne visée
+  const crossPlugin = {
+    id: 'durCross',
+    afterEvent(chart, args) {
+      const e = args.event;
+      if (e.type === 'mouseout') chart._hv = null;
+      else if (e.type === 'mousemove' || e.type === 'click') {
+        const a = chart.chartArea;
+        chart._hv =
+          e.x >= a.left && e.x <= a.right && e.y >= a.top && e.y <= a.bottom ? {x: e.x, y: e.y} : null;
+      }
+      args.changed = true;
+    },
+    afterDatasetsDraw(chart) {
+      const hv = chart._hv;
+      if (!hv || chart._panning) return;
+      const {ctx, chartArea: a, scales} = chart;
+      const xs = scales.x,
+        ys = scales.y;
+      let idx = Math.round(xs.getValueForPixel(hv.x));
+      idx = Math.max(Math.ceil(xs.min), Math.min(Math.floor(xs.max), idx));
+      const cx = xs.getPixelForValue(idx);
+      const bw = Math.abs(xs.getPixelForValue(idx + 1) - xs.getPixelForValue(idx));
+      ctx.save();
+      ctx.fillStyle = hlC;
+      ctx.fillRect(cx - bw / 2, a.top, bw, a.bottom - a.top);
+      ctx.strokeStyle = crossC;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(cx, a.top);
+      ctx.lineTo(cx, a.bottom);
+      ctx.moveTo(a.left, hv.y);
+      ctx.lineTo(a.right, hv.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '11px sans-serif';
+      ctx.textBaseline = 'middle';
+      // étiquette de durée (en bas)
+      const tx = range(idx),
+        w = ctx.measureText(tx).width + 12;
+      let lx = Math.max(a.left, Math.min(a.right - w, cx - w / 2));
+      ctx.fillStyle = crossBg;
+      ctx.fillRect(lx, a.bottom + 2, w, 18);
+      ctx.fillStyle = crossTx;
+      ctx.textAlign = 'center';
+      ctx.fillText(tx, lx + w / 2, a.bottom + 11);
+      // étiquette de valeur (à gauche)
+      const v = ys.getValueForPixel(hv.y);
+      const vt = fmtY(pct ? Math.round(v) : Math.round(v * 100) / 100),
+        vw = ctx.measureText(vt).width + 10;
+      ctx.fillStyle = crossBg;
+      ctx.fillRect(a.left - vw - 2, hv.y - 9, vw, 18);
+      ctx.fillStyle = crossTx;
+      ctx.fillText(vt, a.left - vw / 2 - 2, hv.y);
+      ctx.restore();
+    }
+  };
+
+  const ctx = cv.getContext('2d');
+  CH['dur'] = new Chart(ctx, {
+    type: 'bar',
+    plugins: [crossPlugin],
+    data: {
+      labels,
+      datasets: [
+        {
+          data,
+          backgroundColor: data.map(v => (v === null || v >= 0 ? posC : negC)),
+          borderRadius: 3,
+          borderWidth: 0,
+          categoryPercentage: 1,
+          barPercentage: 0.86
+        }
+      ]
+    },
+    options: {
+      ...CO,
+      animation: false,
+      layout: {padding: {left: 4, bottom: 14, right: 6}},
+      interaction: {mode: 'index', intersect: false},
+      onClick: (evt, els, chart) => {
+        const hv = chart._hv;
+        if (!hv || chart._moved) return;
+        let i = Math.round(chart.scales.x.getValueForPixel(hv.x));
+        if (i < 0 || i >= nb || !list[i].length) return;
+        openTradesListModal('Durée ' + range(i), list[i]);
+      },
+      plugins: {
+        legend: {display: false},
+        tooltip: {
+          callbacks: {
+            title: items => (items.length ? range(items[0].dataIndex) : ''),
+            label: i => {
+              const k = i.dataIndex;
+              if (!tot[k]) return ' aucun trade';
+              return (
+                ' ' +
+                (pct ? wins[k] + ' / ' + tot[k] + ' gagnants → ' + data[k] + '%' : fmtY(data[k]) + ' (' + tot[k] + ' T)')
+              );
+            },
+            afterLabel: i => {
+              const k = i.dataIndex;
+              if (!tot[k]) return '';
+              return pct ? ' ' + fmtY(Math.round(pnl[k] * 100) / 100) : ' win rate ' + Math.round((wins[k] / tot[k]) * 100) + '%';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          grid: {color: grC, drawTicks: false},
+          ticks: {color: axC, maxRotation: 0, autoSkip: true, maxTicksLimit: 14},
+          min: 0,
+          max: nb - 1
+        },
+        y: {
+          grid: {color: grC},
+          ticks: {color: axC, callback: v => fmtY(v)},
+          max: pct ? 100 : undefined,
+          beginAtZero: true
+        }
+      }
+    }
+  });
+
+  // Zoom (molette) / déplacement (glisser) / réinitialisation (double-clic) — branchés une seule fois par canevas
+  const ch = CH['dur'];
+  ch._nb = nb;
+  if (!cv.dataset.durBound) {
+    cv.dataset.durBound = '1';
+    cv.style.touchAction = 'pan-y';
+    const view = () => {
+      const c = CH['dur'];
+      return c ? {lo: c.scales.x.min, hi: c.scales.x.max} : null;
+    };
+    const setView = (lo, hi) => {
+      const c = CH['dur'];
+      if (!c) return;
+      const full = c._nb;
+      // Bornes entières (échelle « catégories ») : au moins 5 colonnes visibles (ou toutes s'il y en a moins)
+      lo = Math.floor(lo);
+      hi = Math.ceil(hi);
+      let span = Math.max(Math.min(hi - lo, full - 1), Math.min(4, full - 1));
+      if (lo < 0) {
+        lo = 0;
+        hi = lo + span;
+      }
+      if (hi > full - 1) {
+        hi = full - 1;
+        lo = Math.max(0, hi - span);
+      }
+      c.options.scales.x.min = lo;
+      c.options.scales.x.max = hi;
+      c.update('none');
+    };
+    cv.addEventListener(
+      'wheel',
+      e => {
+        const c = CH['dur'];
+        if (!c) return;
+        e.preventDefault();
+        const v = view(),
+          rect = cv.getBoundingClientRect();
+        const xs = c.scales.x;
+        const mx = e.clientX - rect.left;
+        const anchor = xs.getValueForPixel(mx);
+        const f = e.deltaY < 0 ? 0.8 : 1.25;
+        const lo = anchor - (anchor - v.lo) * f,
+          hi = anchor + (v.hi - anchor) * f;
+        setView(lo, hi);
+      },
+      {passive: false}
+    );
+    let drag = null;
+    cv.addEventListener('pointerdown', e => {
+      const c = CH['dur'];
+      if (!c || e.button > 0) return;
+      const v = view();
+      drag = {x: e.clientX, lo: v.lo, hi: v.hi, moved: false};
+      c._moved = false;
+      try {
+        cv.setPointerCapture(e.pointerId);
+      } catch (_) {}
+    });
+    cv.addEventListener('pointermove', e => {
+      const c = CH['dur'];
+      if (!c || !drag) return;
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 3) {
+        drag.moved = true;
+        c._moved = true;
+        c._panning = true;
+        cv.style.cursor = 'grabbing';
+      }
+      if (!drag.moved) return;
+      const xs = c.scales.x;
+      const perPx = (drag.hi - drag.lo) / (xs.right - xs.left);
+      setView(drag.lo - dx * perPx, drag.hi - dx * perPx);
+    });
+    const end = () => {
+      const c = CH['dur'];
+      if (c) c._panning = false;
+      drag = null;
+      cv.style.cursor = '';
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+    cv.addEventListener('dblclick', () => {
+      const c = CH['dur'];
+      if (c) setView(0, c._nb - 1);
+    });
+  }
+}
 function toggleMode(k) {
   MODE[k] = !MODE[k];
   document.getElementById('tgl-' + k).classList.toggle('on', MODE[k]);
@@ -4357,6 +4696,7 @@ function toggleMode(k) {
     drawComp('cSessions', 'sessions', 'session', ST.sessions, MODE.sessions);
   else if (k === 'jours') drawJours(ST.jours);
   else if (k === 'tf') drawComp('cTF', 'tf', 'tf', ST.tf, MODE.tf, true);
+  else if (k === 'dur') drawDur(ST.dur);
 }
 
 function buildCompCharts() {
@@ -4372,13 +4712,14 @@ function buildCompCharts() {
     {id: 'cPairs', key: 'pairs', title: 'PAR PAIRE / ACTIF', tvar: '--ct-comp-pairs', h: 220},
     {id: 'cSessions', key: 'sessions', title: 'PAR SESSION', tvar: '--ct-comp-sessions', h: 200},
     {id: 'cJours', key: 'jours', title: 'PAR JOUR DE SEMAINE', tvar: '--ct-comp-jours', h: 180},
-    {id: 'cTF', key: 'tf', title: 'PAR TIMEFRAME', tvar: '--ct-comp-tf', multi: true, h: 200}
+    {id: 'cTF', key: 'tf', title: 'PAR TIMEFRAME', tvar: '--ct-comp-tf', multi: true, h: 200},
+    {id: 'cDur', key: 'dur', title: 'DURÉE DES TRADES', tvar: '--ct-dur', bg: '--dur-bg', h: 280}
   ];
   document.getElementById('compCharts').innerHTML = COMP.map(
     c => `
-    <div class="chart-card" style="background:var(--comp-bg)">
+    <div class="chart-card" style="background:var(${c.bg || '--comp-bg'})">
       <div class="chart-header">
-        <div class="chart-title" data-editable data-tvar="${c.tvar}" style="color:var(${c.tvar},#00e5a0)">${c.title}</div>
+        <div><div class="chart-title" data-editable data-tvar="${c.tvar}" style="color:var(${c.tvar},#00e5a0)">${c.title}</div>${c.key === 'dur' ? '<div id="durNote" style="font-size:10px;color:var(--muted);margin-top:2px;min-height:12px;"></div>' : ''}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <label class="bt-toggle"><input type="checkbox" id="bt-${c.key}" onchange="toggleBT('${c.key}')"> BT</label>
           <div class="tgl-wrap"><span>€</span><div class="tgl-track" id="tgl-${c.key}" onclick="toggleMode('${c.key}')"><div class="tgl-thumb"></div></div><span>%</span></div>
@@ -4417,6 +4758,7 @@ function bindPBtns() {
       else if (c === 'sessions') drawComp('cSessions', 'sessions', 'session', p, MODE.sessions);
       else if (c === 'jours') drawJours(p);
       else if (c === 'tf') drawComp('cTF', 'tf', 'tf', p, MODE.tf, true);
+      else if (c === 'dur') drawDur(p);
     });
   });
 }
@@ -4432,6 +4774,7 @@ function refreshAllCharts() {
   drawComp('cSessions', 'sessions', 'session', ST.sessions, MODE.sessions);
   drawJours(ST.jours);
   drawComp('cTF', 'tf', 'tf', ST.tf, MODE.tf, true);
+  drawDur(ST.dur);
 }
 
 // ══ COLOR PICKER ══
@@ -4904,6 +5247,16 @@ function buildTV() {
       section: 'Comparaisons'
     },
     {v: '--ct-comp-tf', l: 'Titre — Par timeframe', page: 'Track Record', section: 'Comparaisons'},
+    {v: '--dur-bg', l: 'Fond', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--ct-dur', l: 'Titre', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-pos', l: 'Barres positives', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-neg', l: 'Barres négatives', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-axis', l: 'Axes', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-grid', l: 'Grille', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-cross', l: 'Curseur (lignes)', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-cross-bg', l: 'Curseur — fond des étiquettes', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-cross-tx', l: 'Curseur — texte des étiquettes', page: 'Track Record', section: 'Durée des trades'},
+    {v: '--dur-hl', l: 'Barre survolée (surbrillance)', page: 'Track Record', section: 'Durée des trades'},
     // ══ Journal de trading ══
     {
       v: '--tag-long-bg',
