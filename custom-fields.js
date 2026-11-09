@@ -2928,24 +2928,23 @@ function cfEnsureNavToggleCard() {
         <span id="cfNavColumnLbl" style="color:var(--muted)">Désactivé</span>
       </div>
       <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border,#1e2a3a);">
-        <div class="mod-col-title" style="margin-bottom:10px;" data-editable>RÉGLAGE — GRAPHIQUE « DURÉE DES TRADES »</div>
+        <div class="mod-col-title" id="durPrefTitle" style="margin-bottom:10px;" data-editable>RÉGLAGE — GRAPHIQUE « DURÉE DES TRADES »</div>
         <div style="display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;">
-          <span data-editable style="font-size:12px;color:var(--muted);padding-bottom:9px;">Afficher une colonne toutes les</span>
-          <div class="fg" style="width:80px;"><label data-editable>Nombre</label><input type="number" id="durBucketN" min="1" step="1" onchange="cfDurBucketChanged()" oninput="cfDurBucketChanged()"></div>
-          <div class="fg" style="width:130px;"><label data-editable>Unité</label>
+          <span id="durPrefLead" data-editable style="font-size:12px;color:var(--muted);padding-bottom:9px;">Afficher une colonne toutes les</span>
+          <div class="fg" style="width:80px;"><label id="durPrefLblN" data-editable>Nombre</label><input type="number" id="durBucketN" min="1" step="1" onchange="cfDurBucketChanged()" oninput="cfDurBucketChanged()"></div>
+          <div class="fg" style="width:130px;"><label id="durPrefLblU" data-editable>Unité</label>
             <select id="durBucketUnit" onchange="cfDurBucketChanged()">
-              <option value="s">secondes</option>
               <option value="min">minutes</option>
               <option value="h">heures</option>
               <option value="j">jours</option>
             </select></div>
         </div>
-        <div style="font-size:10px;color:var(--muted);margin-top:8px;">Les heures de trade sont enregistrées à la minute : en secondes, les colonnes ne se remplissent que par minutes entières.</div>
       </div>
     </div>`;
   insertBeforeEl.parentNode.insertBefore(card, insertBeforeEl);
   cfRefreshPrefsCard();
   cfDurBucketFill();
+  if (typeof applyPencilEdits === 'function') applyPencilEdits(); // textes modifiés au stylo
 }
 
 // ── Mode stylo : police + taille indépendante PC/téléphone pour le libellé

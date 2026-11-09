@@ -4374,7 +4374,7 @@ function drawJours(period) {
 // → première colonne (0 – 30 min) ; 30 min pile → colonne suivante (30 min – 1 h).
 // Axe gauche : gain (€) ou win rate (%) selon le bouton €/%. Curseur en croix, zoom à la molette,
 // glisser pour se déplacer, double-clic pour tout revoir.
-const DUR_UNIT_SEC = {s: 1, min: 60, h: 3600, j: 86400};
+const DUR_UNIT_SEC = {min: 60, h: 3600, j: 86400};
 function durBucketCfg() {
   const c = ls('tj_dur_bucket', null) || {};
   const n = Math.max(1, Math.floor(parseFloat(c.n)) || 30);
@@ -4417,7 +4417,6 @@ function drawDur(period) {
   period = period || ST.dur || 'tout';
   destroy('dur');
   const note = document.getElementById('durNote');
-  const hint = 'molette : zoom · glisser : déplacer · double-clic : tout voir';
   const tr = btFilter('dur', period);
   const withDur = [];
   let skipped = 0;
@@ -4431,6 +4430,8 @@ function drawDur(period) {
     : '';
   if (!withDur.length) {
     if (note) note.textContent = skipTxt + 'aucun trade avec une durée sur cette période';
+    const h0 = document.getElementById('durHint');
+    if (h0) h0.style.display = 'none';
     return;
   }
   // Tranches
@@ -4461,7 +4462,9 @@ function drawDur(period) {
   const range = i => durFmt(i * S) + ' – ' + durFmt((i + 1) * S);
   if (note)
     note.textContent =
-      skipTxt + 'une colonne = ' + durFmt(S) + (adjusted ? ' (agrandi automatiquement)' : '') + ' · ' + hint;
+      skipTxt + 'une colonne = ' + durFmt(S) + (adjusted ? ' (agrandi automatiquement)' : '') + ' · ';
+  const h1 = document.getElementById('durHint');
+  if (h1) h1.style.display = '';
 
   const posC = gc('--dur-pos') || 'rgba(0,229,160,.8)',
     negC = gc('--dur-neg') || 'rgba(239,68,68,.8)';
@@ -4719,7 +4722,7 @@ function buildCompCharts() {
     c => `
     <div class="chart-card" style="background:var(${c.bg || '--comp-bg'})">
       <div class="chart-header">
-        <div><div class="chart-title" data-editable data-tvar="${c.tvar}" style="color:var(${c.tvar},#00e5a0)">${c.title}</div>${c.key === 'dur' ? '<div id="durNote" style="font-size:10px;color:var(--muted);margin-top:2px;min-height:12px;"></div>' : ''}</div>
+        <div><div class="chart-title" data-editable data-tvar="${c.tvar}" style="color:var(${c.tvar},#00e5a0)">${c.title}</div>${c.key === 'dur' ? '<div style="font-size:10px;color:var(--muted);margin-top:2px;min-height:12px;"><span id="durNote"></span><span id="durHint" data-editable>molette : zoom · glisser : déplacer · double-clic : tout voir</span></div>' : ''}</div>
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           <label class="bt-toggle"><input type="checkbox" id="bt-${c.key}" onchange="toggleBT('${c.key}')"> BT</label>
           <div class="tgl-wrap"><span>€</span><div class="tgl-track" id="tgl-${c.key}" onclick="toggleMode('${c.key}')"><div class="tgl-thumb"></div></div><span>%</span></div>
