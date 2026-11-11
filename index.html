@@ -608,9 +608,47 @@
 <div class="cp-overlay" id="cguModal">
   <div class="cp-modal" style="width:480px;max-height:80vh;overflow-y:auto;">
     <div class="cp-title"><span data-editable>CONDITIONS D'UTILISATION</span></div>
-    <div id="cguText" data-editable style="font-size:12px;line-height:1.6;color:var(--text);padding:6px 0 4px;white-space:pre-line;">Ce texte est à personnaliser (mode stylo) : ajoute ici les conditions d'utilisation de Trading Journal Pro.</div>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+    <div id="cguText" data-editable style="font-size:12px;line-height:1.6;color:var(--text);padding:6px 0 4px;white-space:pre-line;">En utilisant Trading Journal Pro, tu peux :
+— te connecter avec ton compte Google et définir un code PIN pour te reconnecter plus vite sur cet appareil ;
+— enregistrer tes trades, ton capital et ton risk management, et consulter ton Track Record (courbes, statistiques, comparaisons) ;
+— discuter avec les autres utilisateurs dans Amis et leur partager des trades ;
+— personnaliser l'application (thèmes, mode stylo, graphiques) ;
+— exporter et importer des sauvegardes de tes données.
+
+Ce que tu ne peux pas faire :
+— insulter, harceler ou menacer un autre utilisateur dans les discussions ;
+— usurper l'identité d'un autre utilisateur ou te faire passer pour l'administrateur ;
+— essayer de contourner les protections de l'application ou d'accéder aux données d'un autre compte sans son accord ;
+— partager ton code PIN avec quelqu'un d'autre.
+
+En cas de non-respect de ces règles, l'administrateur peut suspendre temporairement ton compte, en t'indiquant toujours le motif et la durée.</div>
+    <div style="display:flex;justify-content:center;margin:2px 0 4px;">
+      <button type="button" onclick="openCguAdminModal()" style="background:transparent;border:none;color:var(--muted);font-family:var(--mono);font-size:9px;text-decoration:underline;cursor:pointer;padding:3px;">Conditions d'utilisation de l'administrateur</button>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:6px;">
       <button class="btn btn-g" onclick="document.getElementById('cguModal').classList.remove('open')">FERMER</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONDITIONS D'UTILISATION DE L'ADMINISTRATEUR -->
+<div class="cp-overlay" id="cguAdminModal">
+  <div class="cp-modal" style="width:480px;max-height:80vh;overflow-y:auto;">
+    <div class="cp-title"><span data-editable>CONDITIONS D'UTILISATION — ADMINISTRATEUR</span></div>
+    <div id="cguAdminText" data-editable style="font-size:12px;line-height:1.6;color:var(--text);padding:6px 0 4px;white-space:pre-line;">Ce texte ne s'applique que si tu acceptes, au moment précis où c'est demandé, qu'un administrateur t'aide en direct sur ton compte.
+
+Si tu acceptes une session d'aide en direct :
+— l'administrateur (paulolasko@gmail.com) peut consulter ce qui s'affiche sur ton compte et, seulement si tu l'autorises en plus dans cette même session, le modifier ;
+— tu vois en direct ce qu'il fait, avec sa souris repérée en rouge ;
+— tu peux arrêter la session à tout moment ;
+— rien ne se passe en dehors de cette session : pas d'accès silencieux, pas d'historique caché.
+
+En dehors d'une session que tu as acceptée :
+— l'administrateur peut réinitialiser ton code PIN si tu le lui demandes (il ne voit jamais ton PIN, ni l'ancien ni le nouveau) ;
+— l'administrateur peut suspendre temporairement ton compte en cas de non-respect des conditions d'utilisation, en t'indiquant toujours le motif et la durée ;
+— l'administrateur ne peut jamais se connecter à ton compte, voir ton écran ou le modifier sans que tu l'aies accepté au moment même.</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+      <button class="btn btn-g" onclick="document.getElementById('cguAdminModal').classList.remove('open')">FERMER</button>
     </div>
   </div>
 </div>

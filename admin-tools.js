@@ -19,6 +19,10 @@ function openCguModal() {
   const m = document.getElementById('cguModal');
   if (m) m.classList.add('open');
 }
+function openCguAdminModal() {
+  const m = document.getElementById('cguAdminModal');
+  if (m) m.classList.add('open');
+}
 
 // ── Identité admin (mise en cache après le premier appel réussi) ──
 let _tjpAdminId = null;
