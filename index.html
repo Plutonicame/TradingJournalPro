@@ -598,6 +598,21 @@
   </div>
 
   <div class="mod-grid" id="modGrid"></div>
+
+  <div style="display:flex;justify-content:center;margin:18px 0 6px;">
+    <button type="button" id="cguBtn" onclick="openCguModal()" style="background:var(--bg);border:1px solid var(--border,#1e2a3a);border-radius:4px;color:var(--muted);font-family:var(--mono);font-size:9px;padding:3px 8px;cursor:pointer;">Conditions d'utilisation</button>
+  </div>
+</div>
+
+<!-- CONDITIONS D'UTILISATION -->
+<div class="cp-overlay" id="cguModal">
+  <div class="cp-modal" style="width:480px;max-height:80vh;overflow-y:auto;">
+    <div class="cp-title"><span data-editable>CONDITIONS D'UTILISATION</span></div>
+    <div id="cguText" data-editable style="font-size:12px;line-height:1.6;color:var(--text);padding:6px 0 4px;white-space:pre-line;">Ce texte est à personnaliser (mode stylo) : ajoute ici les conditions d'utilisation de Trading Journal Pro.</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+      <button class="btn btn-g" onclick="document.getElementById('cguModal').classList.remove('open')">FERMER</button>
+    </div>
+  </div>
 </div>
 
 <div class="footer" style="display:none"></div>
@@ -740,6 +755,7 @@
 <script src="custom-fields.js"></script>
 <script src="emoji-data.js"></script>
 <script src="friends-chat.js"></script>
+<script src="admin-tools.js"></script>
 <script src="partial-results.js"></script>
 <script src="fullscreen-lock.js"></script>
 <script src="period-calendar.js"></script>
