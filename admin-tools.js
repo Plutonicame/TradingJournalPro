@@ -193,9 +193,11 @@ async function tjpOpenUserList() {
 // Pop-up utilisateur : onglets Infos / Réinitialiser / Ban / Prise de contrôle.
 // ═══════════════════════════════════════════════════════════════════════
 let _tjpInfoCache = null;
-let _tjpInfoTab = 'infos';
+let _tjpInfoTab = null; // null = aucun onglet ouvert, on voit la zone réservée
+let _tjpMenuOpen = false;
 async function tjpOpenUserInfo(uid) {
-  _tjpInfoTab = 'infos';
+  _tjpInfoTab = null;
+  _tjpMenuOpen = false;
   let el = document.getElementById('tjpUserInfoModal');
   if (!el) {
     el = document.createElement('div');
@@ -203,7 +205,8 @@ async function tjpOpenUserInfo(uid) {
     el.className = 'cp-overlay';
     document.body.appendChild(el);
   }
-  el.innerHTML = '<div class="cp-modal" style="width:420px;max-height:80vh;overflow-y:auto;"><div style="font-size:12px;color:var(--muted);">Chargement…</div></div>';
+  el.innerHTML =
+    '<div class="cp-modal" style="width:92vw;max-width:1500px;height:88vh;padding:0;display:flex;flex-direction:column;"><div style="margin:auto;font-size:12px;color:var(--muted);">Chargement…</div></div>';
   el.classList.add('open');
   try {
     const {data, error} = await sb.rpc('tjp_admin_user_info', {uid});
@@ -212,42 +215,64 @@ async function tjpOpenUserInfo(uid) {
     tjpRenderUserInfo();
   } catch (e) {
     console.warn('tjpOpenUserInfo:', e);
-    el.querySelector('.cp-modal').innerHTML = '<div style="font-size:12px;color:#ef4444;">Impossible de charger ce compte.</div>';
+    const box = el.querySelector('.cp-modal');
+    if (box) box.innerHTML = '<div style="margin:auto;font-size:12px;color:#ef4444;">Impossible de charger ce compte.</div>';
   }
 }
-const TJP_TABS = [
+const TJP_MENU_ITEMS = [
   ['infos', 'Infos'],
   ['reset', 'Mot de passe'],
-  ['ban', 'Ban'],
-  ['control', 'Prise de contrôle']
+  ['ban', 'Ban']
 ];
 function tjpRenderUserInfo() {
   const d = _tjpInfoCache;
   const el = document.getElementById('tjpUserInfoModal');
   if (!el || !d) return;
-  const tabsHtml = TJP_TABS.map(
+  const menuItemsHtml = TJP_MENU_ITEMS.map(
     t =>
-      `<button class="tjp-tab-btn" data-tab="${t[0]}" style="flex:1;background:${_tjpInfoTab === t[0] ? 'var(--border,#1e2a3a)' : 'transparent'};border:1px solid var(--border,#1e2a3a);color:var(--text);font-family:var(--mono);font-size:10px;padding:7px 4px;cursor:pointer;">${t[1]}</button>`
+      `<div class="tjp-menu-item" data-tab="${t[0]}" style="padding:9px 16px;font-size:12px;color:var(--text);cursor:pointer;border-radius:6px;white-space:nowrap;">${t[1]}</div>`
   ).join('');
   el.innerHTML =
-    '<div class="cp-modal" style="width:420px;max-height:80vh;overflow-y:auto;">' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">' +
-    tjpAvatarHtml(d.name, d.photo_url, 40) +
-    `<div><div style="font-size:15px;color:var(--text);">${(d.name || '').replace(/</g, '&lt;')}</div>` +
-    `<div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:5px;"><span style="width:7px;height:7px;border-radius:50%;background:${d.online ? '#22c55e' : '#55607a'};display:inline-block;"></span>${d.online ? 'En ligne' : 'Hors ligne'}</div></div>` +
+    '<div class="cp-modal" style="width:92vw;max-width:1500px;height:88vh;padding:0;display:flex;flex-direction:column;overflow:hidden;">' +
+    // ── Bandeau façon navigateur ──
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--card-header-borderbott,var(--border,#1e2a3a));background:var(--card-header-background,rgba(255,255,255,.02));border-radius:10px 10px 0 0;flex-shrink:0;">' +
+    `<div style="display:flex;align-items:center;gap:10px;min-width:0;">${tjpAvatarHtml(d.name, d.photo_url, 30)}` +
+    `<span style="font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${(d.name || '').replace(/</g, '&lt;')}</span>` +
+    `<span title="${d.online ? 'En ligne' : 'Hors ligne'}" style="width:8px;height:8px;border-radius:50%;background:${d.online ? '#22c55e' : '#55607a'};flex-shrink:0;"></span></div>` +
+    '<div style="position:relative;flex-shrink:0;">' +
+    '<button id="tjpMenuBtn" class="btn btn-g" style="display:flex;align-items:center;gap:6px;">MENU <span style="font-size:8px;">▾</span></button>' +
+    `<div id="tjpMenuDropdown" style="display:${_tjpMenuOpen ? 'block' : 'none'};position:absolute;top:calc(100% + 4px);right:0;background:var(--cp-modal-background,#10141f);border:1px solid var(--cp-modal-border,var(--border,#1e2a3a));border-radius:8px;padding:5px;min-width:150px;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.35);">${menuItemsHtml}</div>` +
     '</div>' +
-    `<div style="display:flex;gap:4px;margin-bottom:12px;">${tabsHtml}</div>` +
-    `<div id="tjpTabBody">${tjpTabBodyHtml(d)}</div>` +
-    '<div style="display:flex;justify-content:flex-end;margin-top:12px;">' +
+    '</div>' +
+    // ── Zone principale : grand carré = aperçu / contenu de l'onglet choisi ──
+    `<div id="tjpBigSquare" style="flex:1;margin:16px;border-radius:10px;overflow-y:auto;background:var(--card-header-background,rgba(255,255,255,.02));border:1px dashed var(--border,#1e2a3a);display:flex;">${tjpBigSquareHtml(d)}</div>` +
+    '<div style="display:flex;justify-content:flex-end;padding:10px 16px;flex-shrink:0;">' +
     '<button class="btn btn-g" onclick="document.getElementById(\'tjpUserInfoModal\').classList.remove(\'open\')">FERMER</button>' +
     '</div></div>';
-  el.querySelectorAll('.tjp-tab-btn').forEach(b => {
-    b.onclick = () => {
-      _tjpInfoTab = b.dataset.tab;
+  document.getElementById('tjpMenuBtn').onclick = () => {
+    _tjpMenuOpen = !_tjpMenuOpen;
+    tjpRenderUserInfo();
+  };
+  el.querySelectorAll('.tjp-menu-item').forEach(it => {
+    it.onmouseenter = () => (it.style.background = 'rgba(255,255,255,.06)');
+    it.onmouseleave = () => (it.style.background = '');
+    it.onclick = () => {
+      _tjpInfoTab = it.dataset.tab;
+      _tjpMenuOpen = false;
       tjpRenderUserInfo();
     };
   });
   tjpBindTabHandlers(d.user_id);
+}
+function tjpBigSquareHtml(d) {
+  if (!_tjpInfoTab) {
+    return (
+      '<div style="margin:auto;text-align:center;color:var(--muted);font-size:12px;padding:24px;">' +
+      `L'écran de ${(d.name || '').replace(/</g, '&lt;')} s'afficherait ici si cette fonctionnalité est activée.<br><br>` +
+      'Choisis un onglet dans le menu en haut à droite pour consulter ses informations.</div>'
+    );
+  }
+  return `<div style="padding:22px;width:100%;">${tjpTabBodyHtml(d)}</div>`;
 }
 function tjpFmtDate(x) {
   if (!x) return '—';
@@ -294,14 +319,7 @@ function tjpTabBodyHtml(d) {
         ${isBanned ? '<button id="tjpUnbanBtn" class="btn btn-g" style="color:#ef4444;margin-top:10px;">DÉBAN</button>' : ''}
       </div>`;
   }
-  // 'control' — emplacement réservé, sans action réelle.
-  return `
-    <div style="font-size:12px;color:var(--muted);line-height:1.6;">
-      <div style="border:1px dashed var(--border,#1e2a3a);border-radius:8px;padding:16px;text-align:center;">
-        Zone réservée pour une future prise de contrôle du compte (si elle est un jour activée).
-        <div style="margin-top:10px;"><button class="btn btn-g" disabled style="opacity:.5;cursor:not-allowed;">PRENDRE LE CONTRÔLE</button></div>
-      </div>
-    </div>`;
+  return '';
 }
 function tjpBindTabHandlers(uid) {
   const resetBtn = document.getElementById('tjpResetPinBtn');
