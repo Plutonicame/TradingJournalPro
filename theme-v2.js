@@ -723,7 +723,7 @@
   '--sv-ban-check-bd': '#34d399',
   '--sv-ban-check-tx': '#0b0d14',
   '--sv-screen-title': '#fb7185',
-  '--sv-screen-bg': '#0b0d14',
+  '--sv-screen-bg': 'rgba(8,10,16,.42)',
   '--sv-screen-tx': '#e7e9f1',
   '--sv-screen-count': '#f6bd4f',
   '--sv-screen-out-bg': 'transparent',

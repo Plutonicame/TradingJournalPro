@@ -570,7 +570,7 @@ function tjpShowBanScreen(untilMs, reason, byName, serverOffsetMs) {
     el.id = 'tjpBanScreen';
     el.style.cssText =
       'position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;' +
-      'background:var(--sv-screen-bg,rgba(8,10,16,.85));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);font-family:var(--mono,monospace);';
+      'background:var(--sv-screen-bg,rgba(8,10,16,.42));-webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px);font-family:var(--mono,monospace);';
     el.innerHTML =
       '<div style="font-size:16px;font-weight:600;color:var(--sv-screen-title,#ef4444);">Vous avez été banni par <span id="tjpBanByName"></span></div>' +
       '<div style="font-size:13px;color:var(--sv-screen-tx,#c7d2e4);">Votre compte sera disponible dans :</div>' +
