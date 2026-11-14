@@ -437,6 +437,11 @@ function tjpOCP(v, label, fallback) {
     const prev = teVals[v] || fallback;
     const hex = (typeof rgba2hex === 'function' ? rgba2hex(prev) : prev) || fallback;
     const alpha = typeof getAlpha === 'function' ? getAlpha(prev) : null;
+    // #cpOverlay a le même z-index (1000) que notre pop-up de surveillance ;
+    // comme il est plus tôt dans le DOM, il s'ouvrait caché derrière. On le
+    // passe au-dessus le temps de la sélection.
+    const cpOv = document.getElementById('cpOverlay');
+    if (cpOv) cpOv.style.zIndex = 2147483001;
     openCP(label, hex, newHex => {
       if (typeof teHist !== 'undefined') teHist.push({...teVals});
       teVals[v] = alpha !== null && typeof hexToRgbaWithAlpha === 'function' ? hexToRgbaWithAlpha(newHex, alpha) : newHex;
