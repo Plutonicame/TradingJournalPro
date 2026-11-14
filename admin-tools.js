@@ -369,7 +369,6 @@ function tjpBindTabHandlers(uid) {
   if (confirmBtn) confirmBtn.onclick = () => tjpDoBan(uid);
   const unbanBtn = document.getElementById('tjpUnbanBtn');
   if (unbanBtn) unbanBtn.onclick = () => tjpDoUnban(uid);
-  tjpBindThemesHandlers();
 }
 // ── Onglet Thèmes : personnalisation complète des couleurs de cet outil ──
 const TJP_THEME_VARS = [
@@ -415,20 +414,38 @@ const TJP_THEME_VARS = [
   ['--sv-screen-out-bd', 'Écran de ban — bouton Déconnexion bordure', 'Écran de ban', '#fb7185'],
   ['--sv-screen-out-tx', 'Écran de ban — bouton Déconnexion texte', 'Écran de ban', '#fb7185']
 ];
-function tjpHexFromVar(v, fallback) {
+// Même rendu (classes te-sec-title / te-row / te-label / te-swatch) et même
+// sélecteur de couleur (openCP) que l'onglet « Thème » natif de l'app — on
+// ne réinvente rien, on branche juste nos variables --sv-* dessus.
+function tjpTeHex(v, fallback) {
   try {
-    const cur = typeof teVals !== 'undefined' && teVals[v] !== undefined ? teVals[v] : getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+    if (typeof teVals !== 'undefined' && teVals[v] !== undefined) {
+      const h = typeof rgba2hex === 'function' ? rgba2hex(teVals[v]) : teVals[v];
+      if (h && /^#[0-9a-fA-F]{6}$/.test(h)) return h;
+    }
+    const cur = getComputedStyle(document.documentElement).getPropertyValue(v).trim();
     if (/^#[0-9a-fA-F]{6}$/.test(cur)) return cur;
   } catch (e) {}
   return fallback;
 }
-function tjpSetThemeVar(v, hex) {
+function tjpOCP(v, label, fallback) {
   try {
-    if (typeof teVals !== 'undefined') teVals[v] = hex;
-    document.documentElement.style.setProperty(v, hex);
-    if (typeof applyTheme === 'function') applyTheme();
+    if (typeof teVals === 'undefined' || typeof openCP !== 'function') return;
+    if (teVals[v] === undefined) {
+      teVals[v] = getComputedStyle(document.documentElement).getPropertyValue(v).trim() || fallback;
+    }
+    const prev = teVals[v] || fallback;
+    const hex = (typeof rgba2hex === 'function' ? rgba2hex(prev) : prev) || fallback;
+    const alpha = typeof getAlpha === 'function' ? getAlpha(prev) : null;
+    openCP(label, hex, newHex => {
+      if (typeof teHist !== 'undefined') teHist.push({...teVals});
+      teVals[v] = alpha !== null && typeof hexToRgbaWithAlpha === 'function' ? hexToRgbaWithAlpha(newHex, alpha) : newHex;
+      if (typeof applyTheme === 'function') applyTheme();
+      else document.documentElement.style.setProperty(v, teVals[v]);
+      tjpRenderTabPopup(); // remet à jour la pastille affichée dans notre pop-up
+    });
   } catch (e) {
-    console.warn('tjpSetThemeVar:', e);
+    console.warn('tjpOCP:', e);
   }
 }
 function tjpThemesPanelHtml() {
@@ -440,28 +457,22 @@ function tjpThemesPanelHtml() {
       sections.push(t[2]);
     }
   });
-  return sections
-    .map(sec => {
-      const rows = TJP_THEME_VARS.filter(t => t[2] === sec)
-        .map(t => {
-          const hex = tjpHexFromVar(t[0], t[3]);
-          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;">
-        <span style="font-size:12px;color:var(--sv-infos-tx,var(--text));">${t[1]}</span>
-        <input type="color" value="${hex}" data-tjp-tv="${t[0]}" style="width:34px;height:26px;border:1px solid var(--border,#1e2a3a);border-radius:5px;background:none;cursor:pointer;padding:0;">
-      </div>`;
-        })
-        .join('');
-      return `<div style="margin-bottom:14px;">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">${sec}</div>
-      ${rows}
-    </div>`;
-    })
-    .join('');
-}
-function tjpBindThemesHandlers() {
-  document.querySelectorAll('[data-tjp-tv]').forEach(inp => {
-    inp.oninput = () => tjpSetThemeVar(inp.dataset.tjpTv, inp.value);
-  });
+  const esc = s => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return (
+    '<div class="te-grid-inner" style="display:block;padding:0;">' +
+    sections
+      .map(sec => {
+        const rows = TJP_THEME_VARS.filter(t => t[2] === sec)
+          .map(t => {
+            const hex = tjpTeHex(t[0], t[3]);
+            return `<div class="te-row"><div class="te-label">${t[1]}</div><div class="te-swatch" style="background:${hex}" onclick="tjpOCP('${t[0]}','${esc(t[1])}','${t[3]}')"></div></div>`;
+          })
+          .join('');
+        return `<div style="margin-bottom:10px;"><div class="te-sec-title">${sec}</div>${rows}</div>`;
+      })
+      .join('') +
+    '</div>'
+  );
 }
 async function tjpRefreshUserInfo(uid) {
   try {
@@ -563,6 +574,17 @@ function tjpShowBanScreen(untilMs, reason, byName, serverOffsetMs) {
       '<button id="tjpBanLogoutBtn" style="margin-top:18px;background:var(--sv-screen-out-bg,transparent);border:1px solid var(--sv-screen-out-bd,#ef4444);color:var(--sv-screen-out-tx,#ef4444);font-family:var(--mono,monospace);font-size:12px;padding:8px 18px;border-radius:6px;cursor:pointer;">Déconnexion</button>';
     document.body.appendChild(el);
     document.getElementById('tjpBanLogoutBtn').onclick = function () {
+      // On enlève d'abord l'écran de ban (et on arrête ses minuteurs) : sinon
+      // il reste affiché par-dessus l'écran de connexion après déconnexion.
+      if (_tjpBanInterval) {
+        clearInterval(_tjpBanInterval);
+        _tjpBanInterval = null;
+      }
+      if (_tjpHeartbeatTimer) {
+        clearInterval(_tjpHeartbeatTimer);
+        _tjpHeartbeatTimer = null;
+      }
+      tjpHideBanScreen();
       if (typeof resetPin === 'function') resetPin();
     };
   }
@@ -631,9 +653,11 @@ function tjpStartHeartbeatLoop() {
 const _tjpOrigAfterPinValidated = window.afterPinValidated;
 if (typeof _tjpOrigAfterPinValidated === 'function') {
   window.afterPinValidated = async function (...args) {
-    const banned = await tjpCheckBanAndMaybeShow();
-    if (banned) return;
+    // On laisse d'abord l'app afficher le Track Record normalement, PUIS on
+    // pose l'écran de ban par-dessus si besoin — jamais sur l'écran de
+    // connexion / code PIN.
     await _tjpOrigAfterPinValidated(...args);
+    await tjpCheckBanAndMaybeShow();
     tjpStartHeartbeatLoop();
   };
 }
