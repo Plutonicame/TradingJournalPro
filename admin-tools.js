@@ -15,6 +15,13 @@
 // qui comparent l'e-mail du jeton de connexion) — ce fichier n'affiche
 // que ce que le serveur autorise déjà.
 
+// ── Icônes cadenas (SVG, pas d'emoji) — couleur pilotée par --sv-lock-icon,
+// par défaut #fafafa, via currentColor. ──
+const TJP_LOCK_ICON_CLOSED =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg>';
+const TJP_LOCK_ICON_OPEN =
+  '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 7.6-1.8"></path></svg>';
+
 // ── Identité admin (mise en cache après le premier appel réussi) ──
 let _tjpAdminId = null;
 let _tjpAdminIdPromise = null;
@@ -256,7 +263,7 @@ function tjpRenderUserInfo() {
     `<span style="font-size:11px;color:var(--sv-dot-tx,var(--muted));flex-shrink:0;">${d.online ? 'en ligne' : 'hors ligne'}</span></div>` +
     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
     `<button id="tjpLockBtn" class="btn btn-g" style="display:flex;align-items:center;gap:6px;border-radius:5px;background:var(--sv-lock-bg,var(--btn-g-bg));border-color:var(--sv-lock-bd,var(--btn-g-bd));color:var(--sv-lock-tx,var(--btn-g-tx));">` +
-    `<span>${lockOpen ? '🔓' : '🔒'}</span><span>${lockOpen ? 'Modification' : 'Lecture seule'}</span></button>` +
+    `<span style="display:flex;color:var(--sv-lock-icon,#fafafa);">${lockOpen ? TJP_LOCK_ICON_OPEN : TJP_LOCK_ICON_CLOSED}</span><span>${lockOpen ? 'Modification' : 'Lecture seule'}</span></button>` +
     '<div style="position:relative;">' +
     '<button id="tjpMenuBtn" class="btn btn-g" style="display:flex;align-items:center;gap:6px;border-radius:5px;">MENU <span style="font-size:8px;">▾</span></button>' +
     `<div id="tjpMenuDropdown" style="display:${_tjpMenuOpen ? 'block' : 'none'};position:absolute;top:calc(100% + 4px);right:0;background:var(--sv-menu-bg,#10141f);border:1px solid var(--sv-menu-bd,var(--border,#1e2a3a));border-radius:8px;padding:5px;min-width:150px;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.35);">${menuItemsHtml}</div>` +
@@ -397,6 +404,7 @@ const TJP_THEME_VARS = [
   ['--sv-lock-bg', 'Bouton lecture/modification — fond', 'Lecture / modification', '#1a1f31'],
   ['--sv-lock-bd', 'Bouton lecture/modification — bordure', 'Lecture / modification', '#232838'],
   ['--sv-lock-tx', 'Bouton lecture/modification — texte', 'Lecture / modification', '#e7e9f1'],
+  ['--sv-lock-icon', 'Bouton lecture/modification — icône cadenas', 'Lecture / modification', '#fafafa'],
   ['--sv-close-bg', 'Bouton Fermer — fond', 'Bouton Fermer', '#1a1f31'],
   ['--sv-close-bd', 'Bouton Fermer — bordure', 'Bouton Fermer', '#232838'],
   ['--sv-close-tx', 'Bouton Fermer — texte', 'Bouton Fermer', '#e7e9f1'],

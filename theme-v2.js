@@ -702,6 +702,7 @@
   '--sv-lock-bg': '#1a1f31',
   '--sv-lock-bd': '#232838',
   '--sv-lock-tx': '#e7e9f1',
+  '--sv-lock-icon': '#fafafa',
   '--sv-close-bg': '#1a1f31',
   '--sv-close-bd': '#232838',
   '--sv-close-tx': '#e7e9f1',
