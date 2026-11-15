@@ -142,6 +142,15 @@ function tjpAvatarHtml(name, photoUrl, size) {
   }
   return `<div style="width:${s}px;height:${s}px;border-radius:50%;background:var(--border,#1e2a3a);display:flex;align-items:center;justify-content:center;font-size:${Math.round(s * 0.36)}px;color:var(--muted);flex-shrink:0;">${tjpInitials(name)}</div>`;
 }
+// Gestionnaire d'empilement : la dernière fenêtre/pop-up ouverte (ou
+// ramenée au premier plan) passe toujours devant toutes les autres,
+// quel que soit l'ordre dans lequel elles ont été créées dans le DOM.
+let _tjpZTop = 2147480000;
+function tjpBringToFront(el) {
+  if (!el) return;
+  _tjpZTop += 1;
+  el.style.zIndex = String(_tjpZTop);
+}
 async function tjpOpenUserList() {
   let el = document.getElementById('tjpUserListModal');
   if (!el) {
@@ -158,6 +167,7 @@ async function tjpOpenUserList() {
     '<button class="btn btn-g" onclick="document.getElementById(\'tjpUserListModal\').classList.remove(\'open\')">FERMER</button>' +
     '</div></div>';
   el.classList.add('open');
+  tjpBringToFront(el);
   try {
     const {data, error} = await sb.rpc('tjp_admin_list_users');
     if (error) throw error;
@@ -209,6 +219,7 @@ async function tjpOpenUserInfo(uid) {
   el.innerHTML =
     '<div class="cp-modal" style="width:92vw;max-width:1500px;height:88vh;padding:0;display:flex;flex-direction:column;"><div style="margin:auto;font-size:12px;color:var(--muted);">Chargement…</div></div>';
   el.classList.add('open');
+  tjpBringToFront(el);
   try {
     const {data, error} = await sb.rpc('tjp_admin_user_info', {uid});
     if (error || !data) throw error || new Error('Introuvable');
@@ -437,11 +448,9 @@ function tjpOCP(v, label, fallback) {
     const prev = teVals[v] || fallback;
     const hex = (typeof rgba2hex === 'function' ? rgba2hex(prev) : prev) || fallback;
     const alpha = typeof getAlpha === 'function' ? getAlpha(prev) : null;
-    // #cpOverlay a le même z-index (1000) que notre pop-up de surveillance ;
-    // comme il est plus tôt dans le DOM, il s'ouvrait caché derrière. On le
-    // passe au-dessus le temps de la sélection.
-    const cpOv = document.getElementById('cpOverlay');
-    if (cpOv) cpOv.style.zIndex = 2147483001;
+    // #cpOverlay a le même z-index que les pop-up de surveillance ; on le
+    // ramène toujours au tout premier plan au moment de l'ouvrir.
+    tjpBringToFront(document.getElementById('cpOverlay'));
     openCP(label, hex, newHex => {
       if (typeof teHist !== 'undefined') teHist.push({...teVals});
       teVals[v] = alpha !== null && typeof hexToRgbaWithAlpha === 'function' ? hexToRgbaWithAlpha(newHex, alpha) : newHex;
