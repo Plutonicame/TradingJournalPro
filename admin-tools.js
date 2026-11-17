@@ -740,6 +740,13 @@ function tjpAdminBlockedToast() {
   if (typeof showSync === 'function') showSync('🔒 Lecture seule — active « Modification » pour écrire', '#f6bd4f');
 }
 async function initAdminView(params) {
+  // L'écran de connexion Google (#overlayGoogle) est visible par défaut dans
+  // le HTML tant qu'aucune session n'a encore été traitée : on le masque
+  // tout de suite, car on ne passe jamais par le flux normal (applyUser /
+  // validation du PIN) qui s'en charge d'habitude.
+  if (typeof showOverlay === 'function') showOverlay(null);
+  else document.querySelectorAll('.auth-overlay').forEach(el => el.classList.remove('active'));
+
   const wait = document.createElement('div');
   wait.id = 'tjpAdminWait';
   wait.style.cssText =
@@ -821,6 +828,7 @@ async function initAdminView(params) {
     if (changed && typeof renderAccountMenu === 'function') renderAccountMenu();
   }
 
+  if (typeof showOverlay === 'function') showOverlay(null); // au cas où un autre appel l'aurait rouvert entre-temps
   wait.remove();
   if (typeof startRealtime === 'function') setTimeout(startRealtime, 500);
   if (typeof startPolling === 'function') startPolling();
@@ -846,7 +854,14 @@ function tjpInstallAdminBanner() {
     // app-part2.js (qui reste le vrai garde-fou, celui-ci n'est que l'UX).
     style.textContent =
       'body.tjp-admin-readonly{pointer-events:none!important;}' +
-      '#tjpAdminBanner,#tjpAdminBanner *{pointer-events:auto!important;}' +
+      // Reste cliquable en lecture seule : uniquement ce qui sert à SE
+      // DÉPLACER (barre de navigation desktop, menu mobile équivalent, et
+      // notre propre bandeau) — tout le reste (formulaires, boutons
+      // d'action...) reste bloqué par la règle ci-dessus.
+      '#tjpAdminBanner,#tjpAdminBanner *,' +
+      'body.tjp-admin-readonly .nav,body.tjp-admin-readonly .nav *,' +
+      'body.tjp-admin-readonly #mobileMenu,body.tjp-admin-readonly #mobileMenu *' +
+      '{pointer-events:auto!important;}' +
       '#tjpAdminBanner{position:sticky;top:0;left:0;right:0;z-index:2147483000;display:flex;align-items:center;' +
       'justify-content:center;gap:8px;padding:6px 12px;font:600 11px var(--mono,monospace);' +
       'background:#3b2f0f;color:#f6bd4f;border-bottom:1px solid #6b5a1a;letter-spacing:.02em;}' +
