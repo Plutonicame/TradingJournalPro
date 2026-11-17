@@ -692,6 +692,14 @@ async function resetPin() {
 }
 
 async function _doResetPin() {
+  // Jamais exécuté depuis la vue admin "surveillance" : ça couperait la VRAIE
+  // session Supabase de l'administrateur (partagée avec son propre onglet),
+  // pas celle de la personne consultée — voir initAdminView dans admin-tools.js.
+  if (window._tjpAdminView) {
+    if (typeof showSync === 'function')
+      showSync('⚠ Déconnexion indisponible depuis la vue administrateur', '#f6bd4f');
+    return;
+  }
   if (currentUser && currentUser.id) pinFailClear(currentUser.id);
   stopRealtime();
   stopPolling();
@@ -797,6 +805,17 @@ async function submitReturnEmail() {
 
 // ══ AUTH INIT ══
 async function initAuth() {
+  // ── Mode admin "surveillance" (?admin_view=uid dans l'URL) : n'existe que
+  // dans l'iframe ouvert depuis admin-tools.js, jamais dans l'onglet normal
+  // d'un utilisateur. Saute entièrement l'écran e-mail/PIN ci-dessous — voir
+  // initAdminView() dans admin-tools.js pour tout le détail et les garanties
+  // de sécurité (la session Supabase réelle de l'onglet reste toujours celle
+  // de l'administrateur ; seule la policy RLS admin autorise la suite). ──
+  const _adminViewParams = typeof tjpAdminViewParams === 'function' ? tjpAdminViewParams() : null;
+  if (_adminViewParams && typeof initAdminView === 'function') {
+    return initAdminView(_adminViewParams);
+  }
+
   function applyUser(user) {
     if (!user || currentUser) return;
     currentUser = user;
@@ -1063,6 +1082,10 @@ function pushJournalDataRow(payload) {
 // L'UPSERT, lui, est déjà autorisé de longue date : même chemin que le reste.
 async function cloudDeleteAccount(accId) {
   if (!currentUser) return;
+  if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+    if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+    return;
+  }
   const payload = {
     user_id: currentUser.id,
     acc_id: accId,
@@ -1087,6 +1110,13 @@ async function cloudDeleteAccount(accId) {
 async function pushToCloud(opts) {
   opts = opts || {};
   if (!currentUser || !currentUser.id) return false;
+  // Verrou de la vue admin "surveillance" : cadenas fermé = AUCUNE écriture ne
+  // part vers le cloud, quel que soit le bouton qui a déclenché l'appel. Seul
+  // point d'entrée réseau pour les trades/réglages/thème — voir admin-tools.js.
+  if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+    if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+    return false;
+  }
   // Garde-fou anti-écrasement : tant que l'état en mémoire n'a pas été rechargé
   // pour le compte connecté (code PIN pas encore validé), il ne contient que
   // les valeurs par défaut de démarrage — les envoyer écraserait les vraies
@@ -1305,6 +1335,10 @@ function applyIaChatData(iaChatDataStr) {
 
 async function pushGlobalChatData() {
   if (!currentUser || !currentUser.id) return;
+  if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+    if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+    return;
+  }
   try {
     const row = {
       user_id: currentUser.id,
@@ -1820,7 +1854,12 @@ function startPolling() {
       // autoRefreshToken) — refreshSession() faisait une requête réseau toutes les
       // 15 s et pouvait entrer en collision avec le renouvellement automatique.
       const {data: sd} = await sb.auth.getSession();
-      if (sd?.session?.user) currentUser = sd.session.user;
+      // En mode admin "surveillance" (voir initAdminView dans admin-tools.js),
+      // currentUser.id représente volontairement l'utilisateur CONSULTÉ, pas la
+      // session Supabase réelle (toujours celle de l'admin) : ce rafraîchissement
+      // périodique ne doit jamais l'écraser, sinon la vue retomberait sur le
+      // compte de l'admin lui-même au bout de quelques secondes.
+      if (sd?.session?.user && !window._tjpAdminView) currentUser = sd.session.user;
       if (sd?.session?.access_token && sb.realtime && typeof sb.realtime.setAuth === 'function') {
         sb.realtime.setAuth(sd.session.access_token); // voir startRealtime() : jeton du canal temps réel tenu à jour
       }
@@ -1953,6 +1992,10 @@ function _tradeImagePathFromUrl(url) {
 async function uploadProfilePhotoToStorage(compressedDataUrl) {
   try {
     if (!currentUser || !currentUser.id || !window.sb) return compressedDataUrl;
+    if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+      if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+      return compressedDataUrl;
+    }
     const res = await fetch(compressedDataUrl);
     const blob = await res.blob();
     const fileName = `${currentUser.id}/profile_${Date.now()}.jpg`;
@@ -1980,13 +2023,23 @@ const R2_UPLOAD_ENDPOINT = 'https://ghjashqgwlaofjubzrcp.supabase.co/functions/v
 async function uploadTradeImageToR2(compressedDataUrl) {
   try {
     if (!currentUser || !currentUser.id || !window.sb) return compressedDataUrl;
+    if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+      if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+      return compressedDataUrl;
+    }
     const {data: sessionData} = await sb.auth.getSession();
     const token = sessionData?.session?.access_token;
     if (!token) return compressedDataUrl;
+    // En vue admin "surveillance", la session réelle (le jeton) reste celle de
+    // l'administrateur : on précise explicitement l'utilisateur CIBLE pour que
+    // l'image soit rangée dans SON dossier — vérifié côté serveur (tjp_is_admin())
+    // par la fonction r2-upload, jamais déduit du seul paramètre ici.
+    const body = {action: 'upload', dataUrl: compressedDataUrl};
+    if (window._tjpAdminView) body.target_uid = currentUser.id;
     const res = await fetch(R2_UPLOAD_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
-      body: JSON.stringify({action: 'upload', dataUrl: compressedDataUrl})
+      body: JSON.stringify(body)
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) {
@@ -2005,6 +2058,10 @@ async function uploadTradeImageToR2(compressedDataUrl) {
 // l'hébergeur : anciennes images encore sur Supabase Storage, ou nouvelles sur R2.
 function deleteTradeImageFromStorage(url) {
   if (!url || typeof url !== 'string' || url.startsWith('data:image')) return;
+  if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+    if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+    return;
+  }
   const supabasePath = _tradeImagePathFromUrl(url);
   if (supabasePath && window.sb) {
     sb.storage
@@ -2019,13 +2076,19 @@ function deleteTradeImageFromStorage(url) {
 async function deleteTradeImageFromR2(url) {
   try {
     if (!currentUser || !currentUser.id || !window.sb) return;
+    if (window._tjpAdminView && window._tjpAdminView.readOnly) {
+      if (typeof tjpAdminBlockedToast === 'function') tjpAdminBlockedToast();
+      return;
+    }
     const {data: sessionData} = await sb.auth.getSession();
     const token = sessionData?.session?.access_token;
     if (!token) return;
+    const body = {action: 'delete', url};
+    if (window._tjpAdminView) body.target_uid = currentUser.id;
     await fetch(R2_UPLOAD_ENDPOINT, {
       method: 'POST',
       headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
-      body: JSON.stringify({action: 'delete', url})
+      body: JSON.stringify(body)
     });
   } catch (e) {
     console.warn('Suppression image R2 échouée (ignorée) :', e);

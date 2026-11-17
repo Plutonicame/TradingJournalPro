@@ -6,14 +6,33 @@
 //    (Paramètres → Préférences), visible uniquement sur le compte admin.
 // 3) Liste des utilisateurs (nom, photo, en ligne/hors ligne).
 // 4) Pop-up par utilisateur avec onglets : Infos, Réinitialiser le mot de
-//    passe, Ban, et un onglet « Prise de contrôle » qui n'est qu'un
-//    emplacement réservé dans la mise en page — aucune action derrière.
+//    passe, Ban, Thèmes — et une grande zone « surveillance » qui affiche
+//    une vraie instance de TJP sur le compte de cet utilisateur (Track
+//    Record, Journal, Paramètres...), dans un <iframe> du même site.
 // 5) Écran affiché à un utilisateur banni (motif + compte à rebours).
 //
 // « Qui est admin », « qui est banni » et toutes les actions ci-dessus
 // sont vérifiées et exécutées côté serveur (fonctions SQL tjp_admin_*,
 // qui comparent l'e-mail du jeton de connexion) — ce fichier n'affiche
 // que ce que le serveur autorise déjà.
+//
+// ── Zone « surveillance » (grand carré) ──────────────────────────────────
+// L'iframe charge CETTE MÊME application avec ?admin_view=<uid> dans l'URL.
+// Comme il est sur la même origine, il partage le stockage local de cet
+// onglet : la session Supabase qu'il y trouve est donc TOUJOURS la vraie
+// session de l'administrateur — jamais une session reconstruite pour la
+// personne consultée. C'est uniquement parce que les policies RLS
+// (tj_admin_all, tjp_is_admin()) autorisent l'admin authentifié à lire/
+// écrire les données de n'importe quel compte que l'iframe peut ensuite
+// afficher et modifier celles de la cible (voir initAdminView ci-dessous,
+// dans app-part2.js, et les policies côté Supabase). Le cadenas en haut
+// (_tjpReadOnly) est le seul interrupteur : fermé, aucune écriture ne part
+// jamais vers le cloud (verrouillé au niveau des fonctions réseau elles-
+// mêmes dans app-part2.js, pas juste visuellement) ; ouvert, les actions
+// (trade, réglages, thème, images) sont bien appliquées au compte ciblé.
+// Volontairement HORS PÉRIMÈTRE : envoyer un message ou changer le pseudo/
+// photo "en tant que" cette personne — ça resterait bloqué côté serveur
+// (ces tables n'ont pas de policy admin), ce n'est pas qu'un oubli visuel.
 
 // ── Icônes cadenas (SVG, pas d'emoji) — couleur pilotée par --sv-lock-icon,
 // par défaut #fafafa, via currentColor. ──
@@ -212,7 +231,7 @@ async function tjpOpenUserList() {
 let _tjpInfoCache = null;
 let _tjpPopupTab = null; // null = aucune pop-up ouverte ; sinon 'infos'|'reset'|'ban'|'themes'
 let _tjpMenuOpen = false;
-let _tjpReadOnly = true; // cadenas fermé par défaut — purement visuel pour l'instant
+let _tjpReadOnly = true; // cadenas fermé par défaut ; verrouille réellement l'écriture (voir app-part2.js)
 async function tjpOpenUserInfo(uid) {
   _tjpPopupTab = null;
   _tjpMenuOpen = false;
@@ -281,7 +300,16 @@ function tjpRenderUserInfo() {
   };
   document.getElementById('tjpLockBtn').onclick = () => {
     _tjpReadOnly = !_tjpReadOnly;
-    tjpRenderUserInfo();
+    // Mise à jour ciblée du bouton seulement : on NE rappelle PAS
+    // tjpRenderUserInfo() ici, ça reconstruirait l'iframe de surveillance
+    // (donc la rechargerait, perdant la page où l'admin se trouve). On
+    // prévient plutôt l'iframe déjà ouvert par message, verrou appliqué des
+    // deux côtés : visuellement, et réellement dans les fonctions réseau.
+    tjpUpdateLockBtn();
+    const frame = document.getElementById('tjpSurveillanceFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({type: 'tjp-admin-lock', readOnly: _tjpReadOnly}, window.location.origin);
+    }
   };
   el.querySelectorAll('.tjp-menu-item').forEach(it => {
     it.onmouseenter = () => (it.style.background = 'var(--sv-menu-hover, rgba(255,255,255,.06))');
@@ -296,11 +324,29 @@ function tjpRenderUserInfo() {
   // du menu s'ouvre toujours dans une petite pop-up séparée, par-dessus.
   if (_tjpPopupTab) tjpRenderTabPopup();
 }
+function tjpUpdateLockBtn() {
+  const btn = document.getElementById('tjpLockBtn');
+  if (!btn) return;
+  const lockOpen = !_tjpReadOnly;
+  btn.innerHTML =
+    `<span style="display:flex;color:var(--sv-lock-icon,#fafafa);">${lockOpen ? TJP_LOCK_ICON_OPEN : TJP_LOCK_ICON_CLOSED}</span><span>${lockOpen ? 'Modification' : 'Lecture seule'}</span>`;
+}
+function tjpAdminViewUrl(uid, readOnly) {
+  // Base = cette page elle-même (sans query/hash), quel que soit le chemin
+  // d'hébergement (GitHub Pages sert le site sous un sous-dossier).
+  const base = window.location.origin + window.location.pathname;
+  return base + '?admin_view=' + encodeURIComponent(uid) + '&readonly=' + (readOnly ? '1' : '0');
+}
 function tjpBigSquareHtml(d) {
+  // Une vraie instance de TJP, directement sur le Track Record de cette
+  // personne (page d'accueil par défaut de l'app) — voir le commentaire en
+  // tête de fichier pour le fonctionnement et les garanties de sécurité.
+  const title = (d.name || '').replace(/"/g, '&quot;');
   return (
-    '<div style="margin:auto;text-align:center;color:var(--sv-square-tx,var(--muted));font-size:12px;padding:24px;">' +
-    `L'écran de ${(d.name || '').replace(/</g, '&lt;')} s'afficherait ici si cette fonctionnalité est activée.<br><br>` +
-    'Choisis un onglet dans le menu en haut à droite pour consulter ses informations.</div>'
+    `<iframe id="tjpSurveillanceFrame" title="Compte de ${title}" ` +
+    `src="${tjpAdminViewUrl(d.user_id, _tjpReadOnly)}" ` +
+    'style="width:100%;height:100%;border:0;display:block;background:var(--sv-square-bg,transparent);" ' +
+    '></iframe>'
   );
 }
 // ── Petite pop-up d'onglet, posée PAR-DESSUS la fenêtre (qui garde la zone réservée) ──
@@ -669,6 +715,148 @@ function tjpStartHeartbeatLoop() {
       }
     } catch (e) {}
   }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Mode admin "surveillance" — exécuté UNIQUEMENT dans l'iframe ouvert
+// ci-dessus (?admin_view=uid), jamais dans un onglet normal. Appelé depuis
+// initAuth() (app-part2.js), tout en haut, avant l'écran e-mail/PIN.
+// ═══════════════════════════════════════════════════════════════════════
+function tjpAdminViewParams() {
+  let p;
+  try {
+    p = new URLSearchParams(window.location.search);
+  } catch (e) {
+    return null;
+  }
+  const uid = p.get('admin_view');
+  if (!uid) return null;
+  return {uid: uid, readOnly: p.get('readonly') !== '0'};
+}
+function tjpAdminWriteBlocked() {
+  return !!(window._tjpAdminView && window._tjpAdminView.readOnly);
+}
+function tjpAdminBlockedToast() {
+  if (typeof showSync === 'function') showSync('🔒 Lecture seule — active « Modification » pour écrire', '#f6bd4f');
+}
+async function initAdminView(params) {
+  const wait = document.createElement('div');
+  wait.id = 'tjpAdminWait';
+  wait.style.cssText =
+    'position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;text-align:center;' +
+    'padding:24px;background:#0b0d14;color:#8189a1;font-family:var(--mono,monospace);font-size:13px;';
+  wait.textContent = 'Chargement du compte…';
+  document.body.appendChild(wait);
+
+  let session = null;
+  try {
+    const {data} = await sb.auth.getSession();
+    session = data && data.session;
+  } catch (e) {}
+  if (!session || !session.user) {
+    // Pas de session dans cet onglet (cookies bloqués, etc.) : retombe sur le
+    // parcours normal plutôt que de rester bloqué sur cet écran de chargement.
+    wait.remove();
+    return typeof initAuth === 'function' ? initAuth() : null;
+  }
+
+  // Vérification côté serveur, jamais déduite de l'URL : exactement la même
+  // fonction que celle qui protège les policies RLS "tj_admin_all".
+  let isAdmin = false;
+  try {
+    const r = await sb.rpc('tjp_is_admin');
+    isAdmin = !r.error && r.data === true;
+  } catch (e) {}
+  if (!isAdmin) {
+    wait.innerHTML = 'Accès refusé : ce compte n\'est pas administrateur.';
+    return;
+  }
+
+  // Sous-comptes de la cible + le plus récemment modifié (= "dernier compte
+  // actif"), pour y arriver directement plutôt que sur un compte vide.
+  let accounts = [];
+  try {
+    const r = await sb
+      .from('journal_data')
+      .select('acc_id, acc_name, updated_at, deleted')
+      .eq('user_id', params.uid);
+    (r.data || []).forEach(row => {
+      if (!row.acc_id || row.acc_id === '__global__' || row.deleted) return;
+      accounts.push({id: row.acc_id, name: row.acc_name || row.acc_id, updated_at: row.updated_at});
+    });
+  } catch (e) {}
+  accounts.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
+
+  window._tjpAdminView = {uid: params.uid, readOnly: params.readOnly, adminEmail: session.user.email};
+
+  // Bascule l'identité locale sur la cible — UNIQUEMENT dans cet onglet
+  // iframe (une fenêtre JS séparée de l'onglet principal de l'admin). Tout
+  // le moteur existant (profileKey/accKey, push/pull cloud, thème, chat IA…)
+  // s'en sert déjà pour cloisonner les données par uid ; on le réutilise tel
+  // quel au lieu de dupliquer sa logique. La VRAIE session Supabase de cet
+  // onglet, elle, reste celle de l'administrateur tout du long.
+  currentUser = {id: params.uid, email: null};
+
+  if (accounts.length) {
+    if (typeof saveAccounts === 'function') {
+      saveAccounts(accounts.map(a => ({id: a.id, name: a.name, pinHash: null, createdAt: Date.now()})));
+    }
+    if (typeof setActiveAccId === 'function') setActiveAccId(accounts[0].id);
+  }
+
+  tjpInstallAdminBanner();
+  tjpApplyAdminLockState();
+  window.addEventListener('message', e => {
+    if (e.origin !== window.location.origin) return;
+    if (!e.data || e.data.type !== 'tjp-admin-lock' || !window._tjpAdminView) return;
+    window._tjpAdminView.readOnly = !!e.data.readOnly;
+    tjpApplyAdminLockState();
+  });
+
+  if (typeof reanchorToCurrentUser === 'function') reanchorToCurrentUser();
+  if (typeof initialPullWithRetry === 'function') await initialPullWithRetry();
+  if (typeof pullGlobalChatData === 'function') pullGlobalChatData();
+  if (typeof discoverCloudAccounts === 'function') {
+    const changed = await discoverCloudAccounts();
+    if (changed && typeof renderAccountMenu === 'function') renderAccountMenu();
+  }
+
+  wait.remove();
+  if (typeof startRealtime === 'function') setTimeout(startRealtime, 500);
+  if (typeof startPolling === 'function') startPolling();
+}
+function tjpApplyAdminLockState() {
+  const v = window._tjpAdminView;
+  document.body.classList.toggle('tjp-admin-readonly', !!(v && v.readOnly));
+  const banner = document.getElementById('tjpAdminBanner');
+  if (banner && v) {
+    const modeEl = banner.querySelector('.tjp-ab-mode');
+    if (modeEl) modeEl.textContent = v.readOnly ? 'LECTURE SEULE' : 'MODIFICATION ACTIVÉE';
+    banner.classList.toggle('tjp-ab-edit', !v.readOnly);
+  }
+}
+function tjpInstallAdminBanner() {
+  if (document.getElementById('tjpAdminBanner')) return;
+  const v = window._tjpAdminView;
+  if (!document.getElementById('tjpAdminBannerStyle')) {
+    const style = document.createElement('style');
+    style.id = 'tjpAdminBannerStyle';
+    // Cadenas fermé : tout est bloqué au clic/toucher SAUF la bannière elle-
+    // même — barrière visuelle en plus du verrou réseau déjà posé dans
+    // app-part2.js (qui reste le vrai garde-fou, celui-ci n'est que l'UX).
+    style.textContent =
+      'body.tjp-admin-readonly{pointer-events:none!important;}' +
+      '#tjpAdminBanner,#tjpAdminBanner *{pointer-events:auto!important;}' +
+      '#tjpAdminBanner{position:sticky;top:0;left:0;right:0;z-index:2147483000;display:flex;align-items:center;' +
+      'justify-content:center;gap:8px;padding:6px 12px;font:600 11px var(--mono,monospace);' +
+      'background:#3b2f0f;color:#f6bd4f;border-bottom:1px solid #6b5a1a;letter-spacing:.02em;}' +
+      '#tjpAdminBanner.tjp-ab-edit{background:#3a1420;color:#fb7185;border-bottom-color:#6b2433;}';
+    document.head.appendChild(style);
+  }
+  const banner = document.createElement('div');
+  banner.id = 'tjpAdminBanner';
+  banner.innerHTML = '<span>👁 VUE ADMINISTRATEUR — <span class="tjp-ab-mode">LECTURE SEULE</span></span>';
+  document.body.insertBefore(banner, document.body.firstChild);
 }
 
 // ── Branchement sur la connexion réussie (après code PIN) ──
