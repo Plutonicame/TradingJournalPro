@@ -25,14 +25,12 @@
 // (tj_admin_all, tjp_is_admin()) autorisent l'admin authentifié à lire/
 // écrire les données de n'importe quel compte que l'iframe peut ensuite
 // afficher et modifier celles de la cible (voir initAdminView ci-dessous,
-// dans app-part2.js, et les policies côté Supabase). Le cadenas en haut
-// (_tjpReadOnly) est le seul interrupteur : fermé, aucune écriture ne part
-// jamais vers le cloud (verrouillé au niveau des fonctions réseau elles-
-// mêmes dans app-part2.js, pas juste visuellement) ; ouvert, les actions
-// (trade, réglages, thème, images) sont bien appliquées au compte ciblé.
+// dans app-part2.js, et les policies côté Supabase) — accès complet, sans
+// cadenas ni bandeau (retiré à la demande : la barre du haut, avec le nom
+// et le statut de la personne, suffit à savoir sur quel compte on est).
 // Volontairement HORS PÉRIMÈTRE : envoyer un message ou changer le pseudo/
-// photo "en tant que" cette personne — ça resterait bloqué côté serveur
-// (ces tables n'ont pas de policy admin), ce n'est pas qu'un oubli visuel.
+// photo "en tant que" cette personne — ça reste bloqué côté serveur (ces
+// tables n'ont pas de policy admin), ce n'est pas qu'un oubli visuel.
 
 // ── Icônes cadenas (SVG, pas d'emoji) — couleur pilotée par --sv-lock-icon,
 // par défaut #fafafa, via currentColor. ──
@@ -231,7 +229,6 @@ async function tjpOpenUserList() {
 let _tjpInfoCache = null;
 let _tjpPopupTab = null; // null = aucune pop-up ouverte ; sinon 'infos'|'reset'|'ban'|'themes'
 let _tjpMenuOpen = false;
-let _tjpReadOnly = true; // cadenas fermé par défaut ; verrouille réellement l'écriture (voir app-part2.js)
 async function tjpOpenUserInfo(uid) {
   _tjpPopupTab = null;
   _tjpMenuOpen = false;
@@ -271,9 +268,8 @@ function tjpRenderUserInfo() {
     t =>
       `<div class="tjp-menu-item" data-tab="${t[0]}" style="padding:9px 16px;font-size:12px;color:var(--sv-menu-tx,var(--text));cursor:pointer;border-radius:5px;white-space:nowrap;">${t[1]}</div>`
   ).join('');
-  const lockOpen = !_tjpReadOnly;
   el.innerHTML =
-    '<div class="cp-modal" style="width:92vw;max-width:1500px;height:88vh;padding:0;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--sv-win-bg,#11141d);border:1px solid var(--sv-win-bd,var(--border,#1e2a3a));">' +
+    '<div class="cp-modal" style="width:97vw;max-width:1800px;height:95vh;padding:0;display:flex;flex-direction:column;overflow:hidden;position:relative;background:var(--sv-win-bg,#11141d);border:1px solid var(--sv-win-bd,var(--border,#1e2a3a));">' +
     // ── Bandeau façon navigateur ──
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 16px;border-bottom:1px solid var(--sv-win-bar-bd,var(--border,#1e2a3a));background:var(--sv-win-bar-bg,var(--card-header-background,rgba(255,255,255,.02)));border-radius:10px 10px 0 0;flex-shrink:0;">' +
     `<div style="display:flex;align-items:center;gap:10px;min-width:0;">${tjpAvatarHtml(d.name, d.photo_url, 30)}` +
@@ -281,36 +277,29 @@ function tjpRenderUserInfo() {
     `<span title="${d.online ? 'En ligne' : 'Hors ligne'}" style="width:8px;height:8px;border-radius:50%;background:${d.online ? 'var(--sv-dot-on,#22c55e)' : 'var(--sv-dot-off,#55607a)'};flex-shrink:0;"></span>` +
     `<span style="font-size:11px;color:var(--sv-dot-tx,var(--muted));flex-shrink:0;">${d.online ? 'en ligne' : 'hors ligne'}</span></div>` +
     '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
-    `<button id="tjpLockBtn" class="btn btn-g" style="display:flex;align-items:center;gap:6px;border-radius:5px;background:var(--sv-lock-bg,var(--btn-g-bg));border-color:var(--sv-lock-bd,var(--btn-g-bd));color:var(--sv-lock-tx,var(--btn-g-tx));">` +
-    `<span style="display:flex;color:var(--sv-lock-icon,#fafafa);">${lockOpen ? TJP_LOCK_ICON_OPEN : TJP_LOCK_ICON_CLOSED}</span><span>${lockOpen ? 'Modification' : 'Lecture seule'}</span></button>` +
     '<div style="position:relative;">' +
     '<button id="tjpMenuBtn" class="btn btn-g" style="display:flex;align-items:center;gap:6px;border-radius:5px;">MENU <span style="font-size:8px;">▾</span></button>' +
     `<div id="tjpMenuDropdown" style="display:${_tjpMenuOpen ? 'block' : 'none'};position:absolute;top:calc(100% + 4px);right:0;background:var(--sv-menu-bg,#10141f);border:1px solid var(--sv-menu-bd,var(--border,#1e2a3a));border-radius:8px;padding:5px;min-width:150px;z-index:5;box-shadow:0 8px 24px rgba(0,0,0,.35);">${menuItemsHtml}</div>` +
     '</div>' +
     '</div>' +
     '</div>' +
-    // ── Zone principale : grand carré = emplacement réservé de la prise de contrôle (toujours visible) ──
-    `<div id="tjpBigSquare" style="flex:1;margin:16px;border-radius:10px;overflow-y:auto;background:var(--sv-square-bg,var(--card-header-background,rgba(255,255,255,.02)));border:1px dashed var(--sv-square-bd,var(--border,#1e2a3a));display:flex;">${tjpBigSquareHtml(d)}</div>` +
-    '<div style="display:flex;justify-content:flex-end;padding:10px 16px;flex-shrink:0;">' +
-    `<button class="btn btn-g" style="border-radius:5px;background:var(--sv-close-bg,var(--btn-g-bg));border-color:var(--sv-close-bd,var(--btn-g-bd));color:var(--sv-close-tx,var(--btn-g-tx));" onclick="document.getElementById('tjpUserInfoModal').classList.remove('open')">FERMER</button>` +
-    '</div></div>';
+    // ── Zone principale : le vrai TJP de la cible, plein cadre, sans marge ──
+    `<div id="tjpBigSquare" style="flex:1;min-height:0;overflow:hidden;display:flex;">${tjpBigSquareHtml(d)}</div>` +
+    // ── Bouton fermer flottant : invisible tant que la souris n'approche pas du coin bas-droit ──
+    '<div id="tjpCloseZone" style="position:absolute;right:0;bottom:0;width:130px;height:100px;z-index:30;display:flex;align-items:flex-end;justify-content:flex-end;padding:14px;">' +
+    `<button id="tjpCloseBtn" class="btn btn-g" style="border-radius:5px;opacity:0;transition:opacity .15s ease;background:var(--sv-close-bg,var(--btn-g-bg));border-color:var(--sv-close-bd,var(--btn-g-bd));color:var(--sv-close-tx,var(--btn-g-tx));" onclick="document.getElementById('tjpUserInfoModal').classList.remove('open')">FERMER</button>` +
+    '</div>' +
+    '</div>';
   document.getElementById('tjpMenuBtn').onclick = () => {
     _tjpMenuOpen = !_tjpMenuOpen;
     tjpRenderUserInfo();
   };
-  document.getElementById('tjpLockBtn').onclick = () => {
-    _tjpReadOnly = !_tjpReadOnly;
-    // Mise à jour ciblée du bouton seulement : on NE rappelle PAS
-    // tjpRenderUserInfo() ici, ça reconstruirait l'iframe de surveillance
-    // (donc la rechargerait, perdant la page où l'admin se trouve). On
-    // prévient plutôt l'iframe déjà ouvert par message, verrou appliqué des
-    // deux côtés : visuellement, et réellement dans les fonctions réseau.
-    tjpUpdateLockBtn();
-    const frame = document.getElementById('tjpSurveillanceFrame');
-    if (frame && frame.contentWindow) {
-      frame.contentWindow.postMessage({type: 'tjp-admin-lock', readOnly: _tjpReadOnly}, window.location.origin);
-    }
-  };
+  const tjpCloseZoneEl = document.getElementById('tjpCloseZone');
+  const tjpCloseBtnEl = document.getElementById('tjpCloseBtn');
+  if (tjpCloseZoneEl && tjpCloseBtnEl) {
+    tjpCloseZoneEl.onmouseenter = () => (tjpCloseBtnEl.style.opacity = '1');
+    tjpCloseZoneEl.onmouseleave = () => (tjpCloseBtnEl.style.opacity = '0');
+  }
   el.querySelectorAll('.tjp-menu-item').forEach(it => {
     it.onmouseenter = () => (it.style.background = 'var(--sv-menu-hover, rgba(255,255,255,.06))');
     it.onmouseleave = () => (it.style.background = '');
@@ -324,18 +313,13 @@ function tjpRenderUserInfo() {
   // du menu s'ouvre toujours dans une petite pop-up séparée, par-dessus.
   if (_tjpPopupTab) tjpRenderTabPopup();
 }
-function tjpUpdateLockBtn() {
-  const btn = document.getElementById('tjpLockBtn');
-  if (!btn) return;
-  const lockOpen = !_tjpReadOnly;
-  btn.innerHTML =
-    `<span style="display:flex;color:var(--sv-lock-icon,#fafafa);">${lockOpen ? TJP_LOCK_ICON_OPEN : TJP_LOCK_ICON_CLOSED}</span><span>${lockOpen ? 'Modification' : 'Lecture seule'}</span>`;
-}
-function tjpAdminViewUrl(uid, readOnly) {
+function tjpAdminViewUrl(uid) {
   // Base = cette page elle-même (sans query/hash), quel que soit le chemin
-  // d'hébergement (GitHub Pages sert le site sous un sous-dossier).
+  // d'hébergement (GitHub Pages sert le site sous un sous-dossier). Accès
+  // toujours en pleine écriture (voir initAdminView) : plus de paramètre
+  // readonly, l'admin est toujours « chez lui » sur le compte de la cible.
   const base = window.location.origin + window.location.pathname;
-  return base + '?admin_view=' + encodeURIComponent(uid) + '&readonly=' + (readOnly ? '1' : '0');
+  return base + '?admin_view=' + encodeURIComponent(uid);
 }
 function tjpBigSquareHtml(d) {
   // Une vraie instance de TJP, directement sur le Track Record de cette
@@ -344,7 +328,7 @@ function tjpBigSquareHtml(d) {
   const title = (d.name || '').replace(/"/g, '&quot;');
   return (
     `<iframe id="tjpSurveillanceFrame" title="Compte de ${title}" ` +
-    `src="${tjpAdminViewUrl(d.user_id, _tjpReadOnly)}" ` +
+    `src="${tjpAdminViewUrl(d.user_id)}" ` +
     'style="width:100%;height:100%;border:0;display:block;background:var(--sv-square-bg,transparent);" ' +
     '></iframe>'
   );
@@ -731,14 +715,15 @@ function tjpAdminViewParams() {
   }
   const uid = p.get('admin_view');
   if (!uid) return null;
-  return {uid: uid, readOnly: p.get('readonly') !== '0'};
+  return {uid: uid};
 }
+// Conservées pour compatibilité avec d'éventuels appels restants dans
+// app-part2.js : plus jamais vraies maintenant que l'accès admin est
+// toujours en écriture complète (voir initAdminView), donc inertes.
 function tjpAdminWriteBlocked() {
-  return !!(window._tjpAdminView && window._tjpAdminView.readOnly);
+  return false;
 }
-function tjpAdminBlockedToast() {
-  if (typeof showSync === 'function') showSync('🔒 Lecture seule — active « Modification » pour écrire', '#f6bd4f');
-}
+function tjpAdminBlockedToast() {}
 async function initAdminView(params) {
   // L'écran de connexion Google (#overlayGoogle) est visible par défaut dans
   // le HTML tant qu'aucune session n'a encore été traitée : on le masque
@@ -794,7 +779,12 @@ async function initAdminView(params) {
   } catch (e) {}
   accounts.sort((a, b) => new Date(b.updated_at || 0) - new Date(a.updated_at || 0));
 
-  window._tjpAdminView = {uid: params.uid, readOnly: params.readOnly, adminEmail: session.user.email};
+  // Accès toujours en pleine écriture : l'admin navigue comme s'il était
+  // le propriétaire du compte (plus de cadenas / lecture seule — retiré à
+  // la demande). RLS (tj_admin_all / tjp_is_admin) reste le vrai garde-fou
+  // côté serveur ; ceci ne fait que refléter qu'il n'y a plus de restriction
+  // côté client.
+  window._tjpAdminView = {uid: params.uid, readOnly: false, adminEmail: session.user.email};
 
   // Bascule l'identité locale sur la cible — UNIQUEMENT dans cet onglet
   // iframe (une fenêtre JS séparée de l'onglet principal de l'admin). Tout
@@ -811,15 +801,6 @@ async function initAdminView(params) {
     if (typeof setActiveAccId === 'function') setActiveAccId(accounts[0].id);
   }
 
-  tjpInstallAdminBanner();
-  tjpApplyAdminLockState();
-  window.addEventListener('message', e => {
-    if (e.origin !== window.location.origin) return;
-    if (!e.data || e.data.type !== 'tjp-admin-lock' || !window._tjpAdminView) return;
-    window._tjpAdminView.readOnly = !!e.data.readOnly;
-    tjpApplyAdminLockState();
-  });
-
   if (typeof reanchorToCurrentUser === 'function') reanchorToCurrentUser();
   if (typeof initialPullWithRetry === 'function') await initialPullWithRetry();
   if (typeof pullGlobalChatData === 'function') pullGlobalChatData();
@@ -833,46 +814,9 @@ async function initAdminView(params) {
   if (typeof startRealtime === 'function') setTimeout(startRealtime, 500);
   if (typeof startPolling === 'function') startPolling();
 }
-function tjpApplyAdminLockState() {
-  const v = window._tjpAdminView;
-  document.body.classList.toggle('tjp-admin-readonly', !!(v && v.readOnly));
-  const banner = document.getElementById('tjpAdminBanner');
-  if (banner && v) {
-    const modeEl = banner.querySelector('.tjp-ab-mode');
-    if (modeEl) modeEl.textContent = v.readOnly ? 'LECTURE SEULE' : 'MODIFICATION ACTIVÉE';
-    banner.classList.toggle('tjp-ab-edit', !v.readOnly);
-  }
-}
-function tjpInstallAdminBanner() {
-  if (document.getElementById('tjpAdminBanner')) return;
-  const v = window._tjpAdminView;
-  if (!document.getElementById('tjpAdminBannerStyle')) {
-    const style = document.createElement('style');
-    style.id = 'tjpAdminBannerStyle';
-    // Cadenas fermé : tout est bloqué au clic/toucher SAUF la bannière elle-
-    // même — barrière visuelle en plus du verrou réseau déjà posé dans
-    // app-part2.js (qui reste le vrai garde-fou, celui-ci n'est que l'UX).
-    style.textContent =
-      'body.tjp-admin-readonly{pointer-events:none!important;}' +
-      // Reste cliquable en lecture seule : uniquement ce qui sert à SE
-      // DÉPLACER (barre de navigation desktop, menu mobile équivalent, et
-      // notre propre bandeau) — tout le reste (formulaires, boutons
-      // d'action...) reste bloqué par la règle ci-dessus.
-      '#tjpAdminBanner,#tjpAdminBanner *,' +
-      'body.tjp-admin-readonly .nav,body.tjp-admin-readonly .nav *,' +
-      'body.tjp-admin-readonly #mobileMenu,body.tjp-admin-readonly #mobileMenu *' +
-      '{pointer-events:auto!important;}' +
-      '#tjpAdminBanner{position:sticky;top:0;left:0;right:0;z-index:2147483000;display:flex;align-items:center;' +
-      'justify-content:center;gap:8px;padding:6px 12px;font:600 11px var(--mono,monospace);' +
-      'background:#3b2f0f;color:#f6bd4f;border-bottom:1px solid #6b5a1a;letter-spacing:.02em;}' +
-      '#tjpAdminBanner.tjp-ab-edit{background:#3a1420;color:#fb7185;border-bottom-color:#6b2433;}';
-    document.head.appendChild(style);
-  }
-  const banner = document.createElement('div');
-  banner.id = 'tjpAdminBanner';
-  banner.innerHTML = '<span>👁 VUE ADMINISTRATEUR — <span class="tjp-ab-mode">LECTURE SEULE</span></span>';
-  document.body.insertBefore(banner, document.body.firstChild);
-}
+// (tjpApplyAdminLockState / tjpInstallAdminBanner retirés : plus de cadenas
+// ni de bandeau — la barre du haut, avec le nom et le statut de la
+// personne, suffit à savoir sur quel compte on est. Voir initAdminView.)
 
 // ── Branchement sur la connexion réussie (après code PIN) ──
 const _tjpOrigAfterPinValidated = window.afterPinValidated;
