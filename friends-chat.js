@@ -897,7 +897,19 @@ async function fcOpenConversation(friendId) {
   const pseudoEl = document.getElementById('fcChatPseudo');
   if (pseudoEl) pseudoEl.textContent = c ? c.pseudo : '…';
   const avatarEl = document.getElementById('fcChatAvatar');
-  if (avatarEl) avatarEl.innerHTML = fcAvatarHtml(c ? c.photo : '', c ? c.pseudo : '?');
+  if (avatarEl) {
+    avatarEl.innerHTML = fcAvatarHtml(c ? c.photo : '', c ? c.pseudo : '?');
+    // Clique sur la petite photo en haut de la conversation -> l'affiche en
+    // grand (même visionneuse que pour les photos jointes à un trade). Rien
+    // à faire si la personne n'a pas de photo (juste son initiale).
+    const photoUrl = c && c.photo;
+    avatarEl.style.cursor = photoUrl ? 'pointer' : '';
+    avatarEl.onclick = photoUrl
+      ? () => {
+          if (typeof openFullscreen === 'function') openFullscreen(photoUrl);
+        }
+      : null;
+  }
   document.querySelectorAll('.fc-contact-item').forEach((el) => {
     el.classList.toggle('active', el.dataset.friendId === friendId);
   });
