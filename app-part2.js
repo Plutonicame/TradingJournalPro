@@ -661,6 +661,10 @@ async function importLocalBackup(event) {
 }
 
 async function resetPin() {
+  // Vue admin "surveillance" : on ne propose JAMAIS d'exporter les trades de
+  // la personne consultée (ce ne sont pas ceux de l'admin, et il n'y a pas à
+  // lui demander) — on va direct à la sortie de la vue admin.
+  if (window._tjpAdminView) return _doResetPin();
   // Ne proposer d'exporter que si le contenu a changé depuis la dernière
   // sauvegarde locale exportée (nombre de trades différent, ou un trade modifié).
   const lastHash = localStorage.getItem(accKey('tj_last_backup_hash'));
@@ -692,12 +696,15 @@ async function resetPin() {
 }
 
 async function _doResetPin() {
-  // Jamais exécuté depuis la vue admin "surveillance" : ça couperait la VRAIE
-  // session Supabase de l'administrateur (partagée avec son propre onglet),
-  // pas celle de la personne consultée — voir initAdminView dans admin-tools.js.
+  // "Déconnexion" depuis la vue admin "surveillance" ne doit JAMAIS couper la
+  // VRAIE session Supabase de l'administrateur (partagée avec son propre
+  // onglet, pas celle de la personne consultée — voir initAdminView dans
+  // admin-tools.js) : ça se contente de fermer la fenêtre de surveillance
+  // dans l'onglet parent, pour revenir à la liste des utilisateurs.
   if (window._tjpAdminView) {
-    if (typeof showSync === 'function')
-      showSync('⚠ Déconnexion indisponible depuis la vue administrateur', '#f6bd4f');
+    try {
+      window.parent.postMessage({type: 'tjp-admin-exit'}, window.location.origin);
+    } catch (e) {}
     return;
   }
   if (currentUser && currentUser.id) pinFailClear(currentUser.id);

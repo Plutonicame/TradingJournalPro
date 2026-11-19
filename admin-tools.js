@@ -32,6 +32,20 @@
 // photo "en tant que" cette personne — ça reste bloqué côté serveur (ces
 // tables n'ont pas de policy admin), ce n'est pas qu'un oubli visuel.
 
+// ── Sortie de la vue admin depuis l'intérieur de l'iframe ──────────────────
+// Quand l'admin clique sur « Déconnexion » DANS le TJP de la cible (iframe),
+// on ne coupe jamais sa vraie session (voir _doResetPin dans app-part2.js) :
+// l'iframe prévient simplement cette page (le vrai onglet de l'admin) par
+// message, qui referme la fenêtre de surveillance pour revenir à la liste
+// des utilisateurs. Ce listener ne fait rien tant qu'aucune fenêtre de
+// surveillance n'est ouverte (pas d'effet dans l'iframe elle-même).
+window.addEventListener('message', e => {
+  if (e.origin !== window.location.origin) return;
+  if (!e.data || e.data.type !== 'tjp-admin-exit') return;
+  const modal = document.getElementById('tjpUserInfoModal');
+  if (modal) modal.classList.remove('open');
+});
+
 // ── Icônes cadenas (SVG, pas d'emoji) — couleur pilotée par --sv-lock-icon,
 // par défaut #fafafa, via currentColor. ──
 const TJP_LOCK_ICON_CLOSED =
@@ -286,13 +300,19 @@ function tjpRenderUserInfo() {
     // ── Zone principale : le vrai TJP de la cible, plein cadre, sans marge ──
     `<div id="tjpBigSquare" style="flex:1;min-height:0;overflow:hidden;display:flex;">${tjpBigSquareHtml(d)}</div>` +
     // ── Bouton fermer flottant : invisible tant que la souris n'approche pas du coin bas-droit ──
-    '<div id="tjpCloseZone" style="position:absolute;right:0;bottom:0;width:130px;height:100px;z-index:30;display:flex;align-items:flex-end;justify-content:flex-end;padding:14px;">' +
+    // Zone de déclenchement réduite au tiers (était 130×100) pour ne plus
+    // empiéter sur la barre de navigation coulissante à droite, et collée
+    // tout en bas (bottom:0, pas de marge) comme demandé.
+    '<div id="tjpCloseZone" style="position:absolute;right:0;bottom:0;width:80px;height:44px;z-index:30;display:flex;align-items:flex-end;justify-content:flex-end;padding:6px;">' +
     `<button id="tjpCloseBtn" class="btn btn-g" style="border-radius:5px;opacity:0;transition:opacity .15s ease;background:var(--sv-close-bg,var(--btn-g-bg));border-color:var(--sv-close-bd,var(--btn-g-bd));color:var(--sv-close-tx,var(--btn-g-tx));" onclick="document.getElementById('tjpUserInfoModal').classList.remove('open')">FERMER</button>` +
     '</div>' +
     '</div>';
   document.getElementById('tjpMenuBtn').onclick = () => {
+    // Ouvrir/fermer le menu ne doit JAMAIS reconstruire #tjpBigSquare (ça
+    // recréerait l'iframe donc rechargerait le TJP de la cible) : on ne
+    // touche qu'au menu déroulant lui-même.
     _tjpMenuOpen = !_tjpMenuOpen;
-    tjpRenderUserInfo();
+    tjpUpdateMenuDropdown();
   };
   const tjpCloseZoneEl = document.getElementById('tjpCloseZone');
   const tjpCloseBtnEl = document.getElementById('tjpCloseBtn');
@@ -304,14 +324,21 @@ function tjpRenderUserInfo() {
     it.onmouseenter = () => (it.style.background = 'var(--sv-menu-hover, rgba(255,255,255,.06))');
     it.onmouseleave = () => (it.style.background = '');
     it.onclick = () => {
+      // Idem : ouvrir un onglet du menu ouvre une pop-up séparée PAR-DESSUS
+      // (tjpRenderTabPopup), sans jamais reconstruire #tjpBigSquare/l'iframe.
       _tjpPopupTab = it.dataset.tab;
       _tjpMenuOpen = false;
-      tjpRenderUserInfo();
+      tjpUpdateMenuDropdown();
+      tjpRenderTabPopup();
     };
   });
   // La fenêtre en fond (grand carré) ne doit JAMAIS être remplacée : un onglet
   // du menu s'ouvre toujours dans une petite pop-up séparée, par-dessus.
   if (_tjpPopupTab) tjpRenderTabPopup();
+}
+function tjpUpdateMenuDropdown() {
+  const dd = document.getElementById('tjpMenuDropdown');
+  if (dd) dd.style.display = _tjpMenuOpen ? 'block' : 'none';
 }
 function tjpAdminViewUrl(uid) {
   // Base = cette page elle-même (sans query/hash), quel que soit le chemin
