@@ -836,6 +836,21 @@ async function initAdminView(params) {
     if (changed && typeof renderAccountMenu === 'function') renderAccountMenu();
   }
 
+  // La vue admin ne passe jamais par le flux normal de connexion (code PIN),
+  // or c'est CE flux (afterPinValidated) qui déclenche d'habitude fcInit() —
+  // l'onglet "Ami" (contacts + conversations) restait donc vide même avec
+  // les bonnes policies RLS en lecture, faute d'être jamais chargé. On
+  // l'appelle donc nous-mêmes ici, maintenant que currentUser pointe bien
+  // sur la cible : fcLoadContacts()/les messages utilisent déjà currentUser.id,
+  // exactement comme le reste de l'app.
+  if (typeof fcInit === 'function') {
+    try {
+      fcInit();
+    } catch (e) {
+      console.warn('fcInit (vue admin) :', e);
+    }
+  }
+
   if (typeof showOverlay === 'function') showOverlay(null); // au cas où un autre appel l'aurait rouvert entre-temps
   wait.remove();
   if (typeof startRealtime === 'function') setTimeout(startRealtime, 500);
