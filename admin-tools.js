@@ -201,7 +201,8 @@ async function tjpOpenUserList() {
     '<div class="cp-modal" style="width:360px;max-height:70vh;overflow-y:auto;">' +
     '<div class="cp-title">UTILISATEURS</div>' +
     '<div id="tjpUserListBody" style="font-size:12px;color:var(--muted);padding:10px 0;">Chargement…</div>' +
-    '<div style="display:flex;justify-content:flex-end;margin-top:6px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">' +
+    '<button class="btn btn-g" style="font-size:10px;" onclick="tjpRecomputeStorageUsage()" title="Reliste le bucket R2 et recalcule le quota de chacun depuis zéro">STOCKAGE</button>' +
     '<button class="btn btn-g" onclick="document.getElementById(\'tjpUserListModal\').classList.remove(\'open\')">FERMER</button>' +
     '</div></div>';
   el.classList.add('open');
@@ -234,6 +235,51 @@ async function tjpOpenUserList() {
     console.warn('tjpOpenUserList:', e);
     const body = document.getElementById('tjpUserListBody');
     if (body) body.textContent = 'Impossible de charger la liste.';
+  }
+}
+
+// Recalcule le quota de stockage R2 depuis zéro (reliste tout le bucket côté
+// serveur) — à utiliser une fois après la mise en place du quota, pour que
+// les fichiers déjà présents avant comptent, puis occasionnellement si on
+// pense que le compteur a dérivé. Voir r2-upload (action "recompute").
+async function tjpRecomputeStorageUsage() {
+  try {
+    const {data: sessionData} = await sb.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) return;
+    if (typeof showSync === 'function') showSync('⏳ Recalcul du stockage…', '#55607a');
+    const res = await fetch(R2_UPLOAD_ENDPOINT, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
+      body: JSON.stringify({action: 'recompute'})
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      if (typeof showSync === 'function') showSync('⚠ ' + (data.error || 'Recalcul échoué'), '#ef4444');
+      return;
+    }
+    const GB = 1024 * 1024 * 1024;
+    let users = [];
+    try {
+      const r = await sb.rpc('tjp_admin_list_users');
+      users = r.data || [];
+    } catch (e) {}
+    const nameFor = uid => {
+      if (uid === 'ccefdf06-20fe-457b-97c1-be5acd82bb80') return 'Toi (admin, 4 Go réservés)';
+      const u = users.find(x => x.user_id === uid);
+      return (u && u.name) || uid.slice(0, 8);
+    };
+    const lines = Object.entries(data.totals || {})
+      .sort((a, b) => b[1] - a[1])
+      .map(([uid, bytes]) => `${nameFor(uid)} : ${(bytes / GB).toFixed(2)} Go`)
+      .join('\n');
+    alert(
+      `Stockage recalculé (${data.objectCount} fichier(s) sur R2) :\n\n${lines || 'Rien trouvé.'}\n\n` +
+        `Rappel du quota : 4 Go réservés à l'admin, 6 Go partagés entre les autres (10 Go au total).`
+    );
+  } catch (e) {
+    console.warn('tjpRecomputeStorageUsage:', e);
+    if (typeof showSync === 'function') showSync('⚠ Réseau', '#f59e0b');
   }
 }
 
