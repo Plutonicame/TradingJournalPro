@@ -183,6 +183,18 @@ const FC_CSS = `
 .fc-msg-row:not(.mine) .fc-bubble{background:var(--fc-bubble-theirs-bg,var(--surface));border:1px solid var(--fc-bubble-theirs-border,var(--border));border-bottom-left-radius:3px;}
 .fc-bubble-text{white-space:pre-wrap;word-break:break-word;color:var(--fc-bubble-text,var(--text));}
 .fc-bubble-time{font-size:9px;color:var(--fc-time-color,var(--muted));margin-top:3px;text-align:right;font-family:var(--mono);}
+/* Citation d'un message auquel on répond (façon WhatsApp) : dans la bulle du
+   message envoyé, au-dessus de son contenu, et dans le bandeau au-dessus de
+   la saisie pendant qu'on rédige la réponse. */
+.fc-reply-quote{border-left:3px solid var(--fc-reply-accent,var(--green));background:var(--fc-reply-bg,rgba(255,255,255,.06));border-radius:6px;padding:4px 8px;margin-bottom:5px;max-width:100%;}
+.fc-reply-sender{font-size:11px;font-weight:700;color:var(--fc-reply-accent,var(--green));margin-bottom:1px;}
+.fc-reply-snippet{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.fc-reply-audio{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
+.fc-reply-audio svg{width:13px;height:13px;flex-shrink:0;}
+.fc-reply-bar{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--border);background:var(--surface);flex-shrink:0;}
+.fc-reply-bar-content{flex:1;min-width:0;}
+.fc-reply-bar-content .fc-reply-quote{margin-bottom:0;}
+.fc-reply-cancel{background:none;border:none;color:var(--muted);font-size:15px;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0;}
 .fc-react-trigger{opacity:0;transition:opacity .15s;flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--fc-react-trigger-bg,var(--surface));border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;position:relative;color:var(--muted);padding:0;}
 .fc-msg-inner:hover .fc-react-trigger,.fc-msg-row.show-react .fc-react-trigger{opacity:1;}
 .fc-react-face{filter:grayscale(1);opacity:.85;}
@@ -329,6 +341,10 @@ const FC_HTML = `
         <div class="fc-chat-pseudo" id="fcChatPseudo"></div>
       </div>
       <div class="fc-messages" id="fcMessages"></div>
+      <div class="fc-reply-bar" id="fcReplyBar" style="display:none;">
+        <div class="fc-reply-bar-content" id="fcReplyBarContent"></div>
+        <button class="fc-reply-cancel" onclick="fcCancelReply()" title="Annuler">✕</button>
+      </div>
       <div class="fc-input-bar" id="fcInputBarRow">
         <button class="fc-cancel-btn" id="fcCancelBtn" title="Annuler">${FC_ICON_TRASH}</button>
         <button class="fc-attach-btn" id="fcAttachBtn" title="Partager un trade">${FC_ICON_ATTACH}</button>
@@ -918,12 +934,18 @@ async function fcOpenConversation(friendId) {
   const input = document.getElementById('fcTextInput');
   if (input) input.value = '';
   fcUpdateMicSendBtn();
+  // Une réponse en cours de rédaction ne doit pas survivre à un changement
+  // de conversation (elle n'aurait plus de sens pour un autre contact).
+  fcReplyingTo = null;
+  fcRenderReplyBar();
   fcMarkRead(friendId);
   await fcLoadMessages(friendId);
 }
 function fcBackToContacts() {
   const wrap = document.getElementById('fcWrap');
   if (wrap) wrap.classList.remove('fc-chat-open');
+  fcReplyingTo = null;
+  fcRenderReplyBar();
 }
 async function fcLoadMessages(friendId) {
   const box = document.getElementById('fcMessages');
@@ -1047,11 +1069,11 @@ function fcRenderMessageRow(m, me) {
     ? `<div class="fc-react-badges">${reactions.map((r) => `<span class="fc-react-badge">${fcEsc(r.emoji)}</span>`).join('')}</div>`
     : '';
   // Clic droit (ou appui long sur mobile, qui déclenche aussi contextmenu) —
-  // uniquement sur ses propres messages non supprimés : modifier/supprimer.
-  const ctxAttr =
-    mine && !m.deleted ? ` oncontextmenu="fcOpenMessageMenu(event, ${m.id}); return false;"` : '';
+  // sur n'importe quel message non supprimé : au moins "Répondre" ; modifier/
+  // supprimer restent réservés à ses propres messages (voir fcOpenMessageMenu).
+  const ctxAttr = !m.deleted ? ` oncontextmenu="fcOpenMessageMenu(event, ${m.id}); return false;"` : '';
   const bubbleHtml = `<div class="fc-bubble-wrap">
-      <div class="fc-bubble"${ctxAttr}>${fcRenderBubbleContent(m, mine)}<div class="fc-bubble-time">${fcFmtTime(m.created_at)}</div></div>
+      <div class="fc-bubble"${ctxAttr}>${fcReplyQuoteHtml(m.reply_preview, me)}${fcRenderBubbleContent(m, mine)}<div class="fc-bubble-time">${fcFmtTime(m.created_at)}</div></div>
       ${badgesHtml}
     </div>`;
   const inner = mine ? triggerHtml + bubbleHtml : bubbleHtml + triggerHtml;
@@ -1115,15 +1137,22 @@ function fcOpenMessageMenu(e, msgId) {
   e.stopPropagation();
   fcCloseMsgMenu();
   const m = fcMessages.find((x) => x.id === msgId);
-  if (!m || !currentUser || m.sender_id !== currentUser.id || m.deleted) return;
+  if (!m || !currentUser || m.deleted) return;
+  const mine = m.sender_id === currentUser.id;
   const menu = document.createElement('div');
   menu.id = 'fcMsgMenu';
   menu.className = 'fc-msg-menu';
+  // "Répondre" est dispo sur n'importe quel message (le sien ou celui de
+  // l'autre) ; modifier/supprimer restent réservés à ses propres messages.
+  const replyBtn = `<button onclick="fcCloseMsgMenu();fcStartReply(${m.id})">Répondre</button>`;
   const editBtn =
-    m.msg_type === 'text'
+    mine && m.msg_type === 'text'
       ? `<button onclick="fcCloseMsgMenu();fcOpenEditMessage(${m.id})">Modifier</button>`
       : '';
-  menu.innerHTML = `${editBtn}<button class="fc-msg-menu-danger" onclick="fcCloseMsgMenu();fcAskDeleteMessage(${m.id})">Supprimer pour tout le monde</button>`;
+  const deleteBtn = mine
+    ? `<button class="fc-msg-menu-danger" onclick="fcCloseMsgMenu();fcAskDeleteMessage(${m.id})">Supprimer pour tout le monde</button>`
+    : '';
+  menu.innerHTML = `${replyBtn}${editBtn}${deleteBtn}`;
   document.body.appendChild(menu);
   const x = e.touches ? e.touches[0].clientX : e.clientX;
   const y = e.touches ? e.touches[0].clientY : e.clientY;
@@ -1185,6 +1214,83 @@ async function fcSaveEditedMessage() {
   } finally {
     fcCloseEditModal();
   }
+}
+
+// ══ Répondre à un message (façon WhatsApp) ══
+// fcReplyingTo = { id, preview } tant qu'une réponse est en cours de rédaction
+// (bandeau au-dessus de la barre de saisie) ; preview est le même instantané
+// que celui stocké en base (reply_preview), pour un rendu identique.
+let fcReplyingTo = null;
+function fcTruncateReplyText(txt, max) {
+  const s = (txt || '').trim();
+  if (s.length <= max) return s;
+  return s.slice(0, max).trim() + '…';
+}
+// Résumé d'un trade partagé pour une citation de réponse : juste "paire,
+// direction, backtest (si c'est le cas), résultat en euros" — jamais le
+// pourcentage, ni le reste de la fiche.
+function fcTradeReplySummary(t) {
+  if (!t) return 'Trade';
+  const res = typeof t.res === 'number' ? t.res : parseFloat(t.res) || 0;
+  const resTxt = (res >= 0 ? '+' : '') + res.toFixed(2) + ' €';
+  return [t.paire || null, t.dir || null, t.backtest ? 'backtest' : null, resTxt]
+    .filter(Boolean)
+    .join(', ');
+}
+// Instantané pris au moment où on clique sur "Répondre" (ou au moment de
+// l'envoi) : il ne bouge plus ensuite, même si l'original est modifié.
+function fcBuildReplyPreview(m) {
+  const base = {sender_id: m.sender_id};
+  if (m.msg_type === 'audio') {
+    return Object.assign(base, {type: 'audio', audio_url: m.audio_url, audio_duration: m.audio_duration});
+  }
+  if (m.msg_type === 'trade') {
+    return Object.assign(base, {type: 'trade', text: fcTradeReplySummary(m.trade_data)});
+  }
+  return Object.assign(base, {type: 'text', text: fcTruncateReplyText(m.content, 80)});
+}
+function fcReplySenderLabel(senderId, me) {
+  if (senderId === me) return 'Toi';
+  const c = fcContacts.find((x) => x.friendId === senderId);
+  return (c && c.pseudo) || 'Contact';
+}
+// Rendu de la citation : utilisé à la fois dans le bandeau "en train de
+// répondre" (au-dessus de la saisie) et dans la bulle du message envoyé, au-
+// dessus de son propre contenu — comme sur WhatsApp.
+function fcReplyQuoteHtml(preview, me) {
+  if (!preview) return '';
+  const label = fcEsc(fcReplySenderLabel(preview.sender_id, me));
+  let body;
+  if (preview.type === 'audio') {
+    body = `<div class="fc-reply-audio">${FC_ICON_MIC}<span>${fcFmtDuration(preview.audio_duration)}</span></div>`;
+  } else {
+    body = `<div class="fc-reply-snippet">${fcEsc(preview.text || '')}</div>`;
+  }
+  return `<div class="fc-reply-quote"><div class="fc-reply-sender">${label}</div>${body}</div>`;
+}
+function fcStartReply(msgId) {
+  const m = fcMessages.find((x) => x.id === msgId);
+  if (!m || m.deleted) return;
+  fcReplyingTo = {id: m.id, preview: fcBuildReplyPreview(m)};
+  fcRenderReplyBar();
+  const input = document.getElementById('fcTextInput');
+  if (input) input.focus();
+}
+function fcCancelReply() {
+  fcReplyingTo = null;
+  fcRenderReplyBar();
+}
+function fcRenderReplyBar() {
+  const bar = document.getElementById('fcReplyBar');
+  const content = document.getElementById('fcReplyBarContent');
+  if (!bar || !content) return;
+  if (!fcReplyingTo) {
+    bar.style.display = 'none';
+    content.innerHTML = '';
+    return;
+  }
+  bar.style.display = 'flex';
+  content.innerHTML = fcReplyQuoteHtml(fcReplyingTo.preview, currentUser && currentUser.id);
 }
 
 function fcAskDeleteMessage(msgId) {
@@ -1543,9 +1649,18 @@ async function fcSendMessage(payload) {
       audio_url: null,
       audio_duration: null,
       trade_data: null,
+      reply_to_id: null,
+      reply_preview: null,
     },
     payload,
   );
+  // En cours de réponse à un message (bandeau au-dessus de la saisie) : on
+  // rattache l'instantané pris au clic sur "Répondre", pour tout type de
+  // message envoyé ensuite (texte, vocal, trade partagé).
+  if (fcReplyingTo && row.reply_to_id == null) {
+    row.reply_to_id = fcReplyingTo.id;
+    row.reply_preview = fcReplyingTo.preview;
+  }
   try {
     const { data, error } = await sb.from(FC_MESSAGES_TABLE).insert(row).select().single();
     if (error) {
@@ -1553,6 +1668,8 @@ async function fcSendMessage(payload) {
       else if (typeof showSync === 'function') showSync('⚠ Message non envoyé', '#ef4444');
       return;
     }
+    fcReplyingTo = null;
+    fcRenderReplyBar();
     if (!fcMessages.some((m) => m.id === data.id)) {
       fcMessages.push(data);
       fcRenderMessages();
