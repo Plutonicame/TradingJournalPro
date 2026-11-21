@@ -17,6 +17,8 @@
 <script src="chart.min.js"></script>
 <script src="sortable.min.js"></script>
 <script src="purify.min.js"></script>
+<!-- Génération du PDF « Récap mensuel » (page Analyse IA) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -272,7 +274,19 @@
   <div class="page-title" data-editable data-tvar="--pt-pointscles" style="color:var(--pt-pointscles,#00e5a0)">Points Clés</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
     <button class="btn btn-p" onclick="generatePointsCles()" id="pcGenBtn" style="white-space:nowrap;">Analyser ma strategie</button>
+    <button class="btn btn-p" onclick="generateMonthlyReport()" id="pmGenBtn" style="white-space:nowrap;">Analyse mensuelle</button>
     <label class="bt-toggle" style="font-size:11px;"><input type="checkbox" id="bt-pc" onchange="toggleBT('pc')" style="width:14px;height:14px;"> BT</label>
+  </div>
+  <!-- Récap mensuel PDF : statut + bouton de téléchargement une fois généré -->
+  <div id="pmStatus" style="display:none;font-family:var(--mono);font-size:11px;color:var(--muted);padding:8px 12px;background:var(--surface);border-radius:6px;border:1px solid var(--border);margin-bottom:14px;"></div>
+  <div id="pmResult" style="display:none;margin-bottom:14px;">
+    <div class="card">
+      <div class="card-header"><div class="card-title" style="color:#00e5a0;">RÉCAP MENSUEL</div></div>
+      <div class="card-body" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div id="pmReportLabel" style="font-size:13px;color:var(--text);"></div>
+        <button class="btn btn-p" id="pmDownloadBtn" onclick="pmDownloadPDF()">⬇ Télécharger le PDF</button>
+      </div>
+    </div>
   </div>
   <!-- Zone de chat IA -->
   <div class="card" style="margin-bottom:14px;">

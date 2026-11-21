@@ -4408,3 +4408,495 @@ function pcAnalyze(q) {
     pcGlobalSummary(trades)
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// RÉCAP MENSUEL (PDF) — bouton « Analyse mensuelle » de la page Analyse IA.
+// Génère un rapport PDF structuré sur le dernier mois calendaire complet :
+// courbe de capital, P&L par jour, calendrier coloré, analyse trade par
+// trade par l'IA (bonne/mauvaise perte selon les notes), points forts/axes
+// de travail, évolution face au mois précédent, conclusion. Toujours la
+// même structure d'un mois à l'autre.
+// ══════════════════════════════════════════════════════════════════════════
+
+let _pmLastReport = null; // {doc, filename} mémorisé pour le bouton télécharger
+
+// Mois calendaire complet, `monthsAgo` mois avant le mois en cours (1 = le mois dernier).
+function pmMonthRange(monthsAgo) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() - monthsAgo, 1);
+  const last = new Date(now.getFullYear(), now.getMonth() - monthsAgo + 1, 0);
+  let label = first.toLocaleDateString('fr-FR', {month: 'long', year: 'numeric'});
+  label = label.charAt(0).toUpperCase() + label.slice(1);
+  return {first, last, label, year: first.getFullYear(), month: first.getMonth()};
+}
+function pmYMD(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+function pmTradesInRange(trades, first, last) {
+  const f = pmYMD(first),
+    l = pmYMD(last);
+  return trades
+    .filter(t => t.date && t.date >= f && t.date <= l)
+    .sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || ''));
+}
+function pmStats(trades) {
+  const n = trades.length;
+  const winners = trades.filter(t => (t.res || 0) > 0);
+  const losers = trades.filter(t => (t.res || 0) < 0);
+  const pnl = trades.reduce((s, t) => s + (t.res || 0), 0);
+  const winrate = n ? (winners.length / n) * 100 : 0;
+  const gw = winners.reduce((s, t) => s + t.res, 0);
+  const gl = Math.abs(losers.reduce((s, t) => s + t.res, 0));
+  const pf = gl > 0 ? gw / gl : gw > 0 ? Infinity : 0;
+  const avgRR = n
+    ? trades.reduce((s, t) => s + (typeof computeRR === 'function' ? computeRR(t) || 0 : 0), 0) / n
+    : 0;
+  return {n, winrate, pnl, pf, avgRR};
+}
+
+// Deux graphiques (courbe de capital cumulée, P&L par jour) rendus via des instances
+// Chart.js temporaires hors écran (jamais affichées à l'utilisateur), capturées en PNG
+// puis détruites — n'affecte aucun graphique visible ailleurs dans l'app.
+async function pmBuildChartsImages(trades) {
+  const sorted = [...trades].sort(
+    (a, b) => (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || '')
+  );
+  let cum = 0;
+  const eqLabels = [],
+    eqData = [];
+  sorted.forEach(t => {
+    cum += t.res || 0;
+    eqLabels.push((t.date || '').split('-').reverse().join('/'));
+    eqData.push(Math.round(cum * 100) / 100);
+  });
+  const byDay = {};
+  sorted.forEach(t => {
+    byDay[t.date] = (byDay[t.date] || 0) + (t.res || 0);
+  });
+  const dayLabels = Object.keys(byDay).sort();
+  const dayData = dayLabels.map(d => Math.round(byDay[d] * 100) / 100);
+  const dayLabelsFr = dayLabels.map(d => d.split('-').reverse().join('/'));
+
+  const mk = (w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    c.style.position = 'fixed';
+    c.style.left = '-9999px';
+    c.style.top = '-9999px';
+    document.body.appendChild(c);
+    return c;
+  };
+  const wait = () => new Promise(r => setTimeout(r, 80));
+
+  const eqCanvas = mk(900, 400);
+  const eqChart = new Chart(eqCanvas.getContext('2d'), {
+    type: 'line',
+    data: {
+      labels: eqLabels,
+      datasets: [
+        {
+          data: eqData,
+          borderColor: '#00b386',
+          backgroundColor: 'rgba(0,179,134,.15)',
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: {
+        legend: {display: false},
+        title: {display: true, text: 'Évolution du capital (cumul du mois)', color: '#111', font: {size: 16}}
+      },
+      scales: {
+        x: {ticks: {color: '#444'}},
+        y: {ticks: {color: '#444', callback: v => v.toLocaleString('fr-FR') + '€'}}
+      }
+    }
+  });
+  await wait();
+  const eqImg = eqCanvas.toDataURL('image/png');
+  eqChart.destroy();
+  eqCanvas.remove();
+
+  const pnlCanvas = mk(900, 400);
+  const pnlChart = new Chart(pnlCanvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: dayLabelsFr,
+      datasets: [{data: dayData, backgroundColor: dayData.map(v => (v >= 0 ? '#3b82f6' : '#ef4444'))}]
+    },
+    options: {
+      responsive: false,
+      animation: false,
+      plugins: {
+        legend: {display: false},
+        title: {display: true, text: 'P&L par jour', color: '#111', font: {size: 16}}
+      },
+      scales: {
+        x: {ticks: {color: '#444', maxRotation: 60}},
+        y: {ticks: {color: '#444', callback: v => v.toLocaleString('fr-FR') + '€'}}
+      }
+    }
+  });
+  await wait();
+  const pnlImg = pnlCanvas.toDataURL('image/png');
+  pnlChart.destroy();
+  pnlCanvas.remove();
+
+  return {eqImg, pnlImg};
+}
+
+// Calendrier du mois dessiné à la main sur un canvas (pas de dépendance à la vue
+// calendrier interactive de l'app) : une case par jour, colorée selon le P&L du jour.
+function pmBuildCalendarImage(trades, year, month) {
+  const byDay = {};
+  trades.forEach(t => {
+    if (!t.date) return;
+    byDay[t.date] = (byDay[t.date] || 0) + (t.res || 0);
+  });
+  const firstOfMonth = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startWeekday = (firstOfMonth.getDay() + 6) % 7; // 0 = lundi
+  const cols = 7,
+    cellW = 110,
+    cellH = 80,
+    pad = 10,
+    headerH = 40;
+  const rows = Math.ceil((startWeekday + daysInMonth) / cols);
+  const w = cols * cellW + pad * 2,
+    h = headerH + rows * cellH + pad * 2;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+  const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillStyle = '#333';
+  ctx.textAlign = 'center';
+  jours.forEach((j, i) => ctx.fillText(j, pad + i * cellW + cellW / 2, pad + 22));
+  let day = 1;
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < cols; col++) {
+      const idx = r * cols + col;
+      if (idx < startWeekday || day > daysInMonth) continue;
+      const x = pad + col * cellW,
+        y = headerH + pad + r * cellH;
+      const ymd = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      const pnl = byDay[ymd];
+      let bg = '#f2f2f2';
+      if (pnl !== undefined) {
+        const intensity = Math.min(0.85, 0.25 + Math.abs(pnl) / 400);
+        bg = pnl >= 0 ? `rgba(59,130,246,${intensity})` : `rgba(239,68,68,${intensity})`;
+      }
+      ctx.fillStyle = bg;
+      ctx.fillRect(x, y, cellW - 4, cellH - 4);
+      ctx.strokeStyle = '#ddd';
+      ctx.strokeRect(x, y, cellW - 4, cellH - 4);
+      ctx.fillStyle = '#222';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(String(day), x + 6, y + 16);
+      if (pnl !== undefined) {
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillStyle = pnl >= 0 ? '#0a3d91' : '#7a1212';
+        ctx.textAlign = 'center';
+        ctx.fillText((pnl >= 0 ? '+' : '') + pnl.toFixed(0) + '€', x + (cellW - 4) / 2, y + (cellH - 4) / 2 + 10);
+      }
+      day++;
+    }
+  }
+  return {dataUrl: c.toDataURL('image/png'), w, h};
+}
+
+// Construit le prompt envoyé à l'IA (pcAskAI) : toutes les données nécessaires sont
+// intégrées DIRECTEMENT dans le texte de la question (chiffres déjà calculés côté client,
+// jamais recalculés par l'IA), pour ne jamais dépendre d'un éventuel filtrage par dates
+// fait par l'IA elle-même via ses outils.
+function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats) {
+  const fmt = t => ({
+    id: t.id,
+    date: t.date,
+    heure: t.heure,
+    paire: t.paire,
+    direction: t.dir,
+    resultatEur: typeof t.res === 'number' ? t.res : null,
+    rrCible: t.rrCible || null,
+    rrReel: typeof computeRR === 'function' ? computeRR(t) : null,
+    management: t.mgmt || null,
+    notes: t.notes ? String(t.notes) : null,
+    stars: t.stars || null
+  });
+  const data = {
+    periodeAnalysee: monthLabel,
+    periodePrecedente: prevLabel,
+    statsMoisAnalyse: {
+      nbTrades: curStats.n,
+      winratePct: Math.round(curStats.winrate * 10) / 10,
+      pnlEur: Math.round(curStats.pnl * 100) / 100,
+      profitFactor: isFinite(curStats.pf) ? Math.round(curStats.pf * 100) / 100 : '∞',
+      rrMoyen: Math.round(curStats.avgRR * 100) / 100
+    },
+    statsMoisPrecedent: {
+      nbTrades: prevStats.n,
+      winratePct: Math.round(prevStats.winrate * 10) / 10,
+      pnlEur: Math.round(prevStats.pnl * 100) / 100,
+      profitFactor: isFinite(prevStats.pf) ? Math.round(prevStats.pf * 100) / 100 : '∞',
+      rrMoyen: Math.round(prevStats.avgRR * 100) / 100
+    },
+    tradesDuMoisAnalyse: monthTrades.map(fmt)
+  };
+
+  return `Tu dois rédiger un RÉCAP MENSUEL complet et structuré du trading de l'utilisateur pour la période "${monthLabel}", à comparer au mois précédent "${prevLabel}". Utilise UNIQUEMENT les chiffres fournis ci-dessous (ne recalcule rien, ne va chercher aucune autre donnée via tes outils) :
+
+${JSON.stringify(data)}
+
+Pour CHAQUE trade de "tradesDuMoisAnalyse", juge s'il s'agit d'un bon ou mauvais trade EN TE BASANT SUR LE CHAMP "notes" (le raisonnement, le respect du plan, les émotions décrites par l'utilisateur) et pas seulement sur le résultat en euros : une perte peut être une "bonne perte" (plan respecté, erreur de marché normale) et un gain peut être un "mauvais gain" (plan non respecté, coup de chance). Si "notes" est vide ou trop pauvre pour juger, dis-le honnêtement plutôt que d'inventer.
+
+Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte brut uniquement, rien avant ni après les balises :
+
+###INTRO###
+(un court paragraphe d'introduction du mois : contexte, ambiance générale)
+###FIN_INTRO###
+###TRADES###
+(une ligne par trade de tradesDuMoisAnalyse, format EXACT : id|verdict court (2 à 4 mots)|explication en 1 à 2 phrases courtes)
+###FIN_TRADES###
+###FORCES###
+(3 à 5 points forts du mois, un point par ligne commençant par "- ")
+###FIN_FORCES###
+###AXES###
+(3 à 5 axes de travail ou erreurs répétées du mois, un point par ligne commençant par "- ")
+###FIN_AXES###
+###EVOLUTION###
+(comparaison chiffrée et qualitative avec le mois précédent : ce qui s'est amélioré, ce qui s'est dégradé)
+###FIN_EVOLUTION###
+###CONCLUSION###
+(conclusion courte et motivante, 3 à 5 phrases)
+###FIN_CONCLUSION###`;
+}
+function pmParseSection(answer, tag) {
+  const m = answer.match(new RegExp('###' + tag + '###([\\s\\S]*?)###FIN_' + tag + '###'));
+  return m ? m[1].trim() : '';
+}
+
+// Assemble le PDF final avec jsPDF (chargé en CDN, voir index.html). Structure fixe,
+// identique chaque mois : page de garde, intro + stats, graphiques, calendrier,
+// analyse trade par trade, points forts/axes, évolution, conclusion.
+function pmBuildPDF(o) {
+  const {jsPDF} = window.jspdf;
+  const doc = new jsPDF({unit: 'pt', format: 'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 40;
+  let y = margin;
+
+  const ensureSpace = h => {
+    if (y + h > pageH - margin) {
+      doc.addPage();
+      y = margin;
+    }
+  };
+  const addTitle = (text, size = 16) => {
+    ensureSpace(size + 16);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(size);
+    doc.setTextColor(10, 90, 70);
+    doc.text(text, margin, y);
+    y += size * 1.1;
+  };
+  const addText = (text, size = 10.5) => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(40, 40, 40);
+    const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
+    lines.forEach(line => {
+      ensureSpace(size * 1.4);
+      doc.text(line, margin, y);
+      y += size * 1.4;
+    });
+    y += 8;
+  };
+
+  // ── Page de garde ──
+  doc.setFillColor(10, 14, 14);
+  doc.rect(0, 0, pageW, pageH, 'F');
+  doc.setTextColor(0, 229, 160);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(26);
+  doc.text('RÉCAP MENSUEL', margin, pageH / 2 - 40);
+  doc.setFontSize(20);
+  doc.setTextColor(255, 255, 255);
+  doc.text(o.monthLabel, margin, pageH / 2);
+  doc.setFontSize(11);
+  doc.setTextColor(180, 180, 180);
+  doc.text('Généré le ' + new Date().toLocaleDateString('fr-FR'), margin, pageH / 2 + 30);
+  doc.text('Trading Journal Pro', margin, pageH - margin);
+
+  doc.addPage();
+  y = margin;
+  addTitle('Introduction');
+  addText(o.intro);
+
+  addTitle('Statistiques du mois');
+  addText(
+    `Trades : ${o.curStats.n}  •  Winrate : ${o.curStats.winrate.toFixed(1)}%  •  P&L : ${
+      o.curStats.pnl >= 0 ? '+' : ''
+    }${o.curStats.pnl.toFixed(2)}€  •  RR moyen : ${o.curStats.avgRR.toFixed(2)}  •  Profit factor : ${
+      isFinite(o.curStats.pf) ? o.curStats.pf.toFixed(2) : '∞'
+    }`
+  );
+
+  const chartW = pageW - margin * 2;
+  const chartH = (chartW * 400) / 900;
+  ensureSpace(chartH + 30);
+  addTitle('Courbe de capital');
+  doc.addImage(o.eqImg, 'PNG', margin, y, chartW, chartH);
+  y += chartH + 24;
+
+  ensureSpace(chartH + 30);
+  addTitle('P&L par jour');
+  doc.addImage(o.pnlImg, 'PNG', margin, y, chartW, chartH);
+  y += chartH + 24;
+
+  doc.addPage();
+  y = margin;
+  addTitle('Calendrier du mois');
+  const calW = pageW - margin * 2;
+  const calH = (calW * o.calH) / o.calW;
+  doc.addImage(o.calImg, 'PNG', margin, y, calW, calH);
+  y += calH + 20;
+
+  doc.addPage();
+  y = margin;
+  addTitle('Analyse trade par trade');
+  o.tradeLines.forEach(line => addText(line, 9.5));
+
+  doc.addPage();
+  y = margin;
+  addTitle('Points forts');
+  addText(o.forces);
+  addTitle('Axes de travail');
+  addText(o.axes);
+
+  doc.addPage();
+  y = margin;
+  addTitle('Évolution par rapport au mois précédent');
+  addText(o.evolution);
+  addTitle('Conclusion');
+  addText(o.conclusion);
+
+  return doc;
+}
+
+async function generateMonthlyReport() {
+  const btn = document.getElementById('pmGenBtn');
+  const statusEl = document.getElementById('pmStatus');
+  const resultEl = document.getElementById('pmResult');
+  if (!btn || !statusEl || !resultEl) return;
+  resultEl.style.display = 'none';
+  statusEl.style.display = 'block';
+  statusEl.style.color = 'var(--muted)';
+  statusEl.textContent = 'Préparation du mois...';
+  btn.disabled = true;
+  const prevLabelBtn = btn.textContent;
+  btn.textContent = 'Génération...';
+
+  try {
+    if (typeof window.jspdf === 'undefined') {
+      throw new Error("Le générateur de PDF n'a pas pu se charger (vérifie ta connexion puis réessaie).");
+    }
+
+    const cur = pmMonthRange(1);
+    const prev = pmMonthRange(2);
+    const allReal = realTrades();
+    const monthTrades = pmTradesInRange(allReal, cur.first, cur.last);
+    const prevTrades = pmTradesInRange(allReal, prev.first, prev.last);
+
+    if (!monthTrades.length) {
+      statusEl.textContent = `Aucun trade trouvé pour ${cur.label}.`;
+      statusEl.style.color = 'var(--red)';
+      return;
+    }
+
+    const curStats = pmStats(monthTrades);
+    const prevStats = pmStats(prevTrades);
+
+    statusEl.textContent = 'Génération des graphiques...';
+    const {eqImg, pnlImg} = await pmBuildChartsImages(monthTrades);
+    const cal = pmBuildCalendarImage(monthTrades, cur.year, cur.month);
+
+    statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
+    const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats);
+    const {answer} = await pcAskAI(prompt, APP.trades || [], []);
+
+    const intro = pmParseSection(answer, 'INTRO') || answer;
+    const tradesRaw = pmParseSection(answer, 'TRADES');
+    const forces = pmParseSection(answer, 'FORCES');
+    const axes = pmParseSection(answer, 'AXES');
+    const evolution = pmParseSection(answer, 'EVOLUTION');
+    const conclusion = pmParseSection(answer, 'CONCLUSION');
+
+    const byId = {};
+    monthTrades.forEach(t => {
+      byId[t.id] = t;
+    });
+    const tradeLines = tradesRaw
+      .split('\n')
+      .map(l => l.trim())
+      .filter(Boolean)
+      .map(line => {
+        const parts = line.split('|');
+        const id = parseInt(parts[0], 10);
+        const verdict = (parts[1] || '').trim();
+        const explication = (parts.slice(2).join('|') || '').trim();
+        const t = byId[id];
+        const head = t
+          ? `${(t.date || '').split('-').reverse().join('/')} — ${t.paire || '?'} ${t.dir || ''} — ${
+              typeof t.res === 'number' ? (t.res >= 0 ? '+' : '') + t.res.toFixed(2) + '€' : '?'
+            }`
+          : 'Trade #' + (isNaN(id) ? '?' : id);
+        return `${head}\n   Verdict : ${verdict || '—'}\n   ${explication}`;
+      });
+
+    const doc = pmBuildPDF({
+      monthLabel: cur.label,
+      intro,
+      forces,
+      axes,
+      evolution,
+      conclusion,
+      tradeLines,
+      curStats,
+      prevStats,
+      eqImg,
+      pnlImg,
+      calImg: cal.dataUrl,
+      calW: cal.w,
+      calH: cal.h
+    });
+
+    const filename = `Récap mensuel - ${cur.label}.pdf`;
+    _pmLastReport = {doc, filename};
+    document.getElementById('pmReportLabel').textContent = `Récap de ${cur.label} prêt (${monthTrades.length} trade(s) analysé(s)).`;
+    resultEl.style.display = 'block';
+    statusEl.style.display = 'none';
+  } catch (e) {
+    console.error('Génération du récap mensuel échouée :', e);
+    statusEl.textContent = 'Erreur : ' + (e && e.message ? e.message : 'génération impossible.');
+    statusEl.style.color = 'var(--red)';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabelBtn;
+  }
+}
+function pmDownloadPDF() {
+  if (!_pmLastReport) return;
+  _pmLastReport.doc.save(_pmLastReport.filename);
+}
