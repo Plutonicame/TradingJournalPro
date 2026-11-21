@@ -906,7 +906,7 @@ async function initAdminView(params) {
   if (
     typeof migrateImagesToStorage === 'function' &&
     typeof accKey === 'function' &&
-    !localStorage.getItem(accKey('tjp_images_migrated'))
+    !localStorage.getItem(accKey('tjp_images_migrated_v2'))
   ) {
     try {
       migrateImagesToStorage();

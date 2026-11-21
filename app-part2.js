@@ -360,7 +360,7 @@ async function afterPinValidated() {
   // Migration automatique des images encore en local vers le stockage cloud —
   // une seule fois par compte (marqueur posé uniquement en cas de succès complet,
   // donc ça réessaiera tout seul à la prochaine connexion si ça a été interrompu).
-  if (currentUser && !localStorage.getItem(accKey('tjp_images_migrated'))) {
+  if (currentUser && !localStorage.getItem(accKey('tjp_images_migrated_v2'))) {
     migrateImagesToStorage();
   }
 
@@ -2155,7 +2155,7 @@ async function migrateImagesToStorage() {
   saveState();
   renderTable();
   if (done) showSync(`✓ ${done} image(s) déplacée(s) vers le stockage cloud`, '#22c55e');
-  if (!failed) localStorage.setItem(accKey('tjp_images_migrated'), '1'); // tout est passé : plus besoin de réessayer aux prochaines connexions
+  if (!failed) localStorage.setItem(accKey('tjp_images_migrated_v2'), '1'); // tout est passé : plus besoin de réessayer aux prochaines connexions
 }
 
 // maxWidth/quality par défaut pensés pour rester nets même zoomés à 5x (cf. openFullscreen) :

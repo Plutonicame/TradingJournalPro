@@ -360,7 +360,7 @@ function _doSwitchAccount(accId) {
     // jamais actif au moment du login ne passait donc jamais par là. On la
     // relance ici aussi à chaque changement de compte (même garde-fou par
     // compte : ne fait rien si déjà fait).
-    if (typeof migrateImagesToStorage === 'function' && !localStorage.getItem(accKey('tjp_images_migrated'))) {
+    if (typeof migrateImagesToStorage === 'function' && !localStorage.getItem(accKey('tjp_images_migrated_v2'))) {
       migrateImagesToStorage();
     }
   }
