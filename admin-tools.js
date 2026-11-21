@@ -897,6 +897,24 @@ async function initAdminView(params) {
     }
   }
 
+  // Même logique que pour fcInit() juste au-dessus : la vue admin ne passe
+  // jamais par la connexion normale, qui déclenche d'habitude la migration
+  // des anciennes images (base64/Supabase Storage -> R2, voir
+  // migrateImagesToStorage) vers le compte de stockage compté par le quota.
+  // Sans cet appel, les anciens trades de la personne consultée ne seraient
+  // jamais comptés tant qu'elle ne se connecte pas elle-même.
+  if (
+    typeof migrateImagesToStorage === 'function' &&
+    typeof accKey === 'function' &&
+    !localStorage.getItem(accKey('tjp_images_migrated'))
+  ) {
+    try {
+      migrateImagesToStorage();
+    } catch (e) {
+      console.warn('migrateImagesToStorage (vue admin) :', e);
+    }
+  }
+
   if (typeof showOverlay === 'function') showOverlay(null); // au cas où un autre appel l'aurait rouvert entre-temps
   wait.remove();
   if (typeof startRealtime === 'function') setTimeout(startRealtime, 500);

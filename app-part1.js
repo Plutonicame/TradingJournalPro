@@ -354,6 +354,15 @@ function _doSwitchAccount(accId) {
   if (typeof currentUser !== 'undefined' && currentUser && currentUser.id) {
     _anchoredUid = currentUser.id;
     purgeDemoTrades();
+    // La migration des images (base64/Supabase Storage -> R2, voir
+    // migrateImagesToStorage) ne se déclenchait jusqu'ici qu'une fois à la
+    // connexion, pour le SEUL compte alors actif — un compte de trading
+    // jamais actif au moment du login ne passait donc jamais par là. On la
+    // relance ici aussi à chaque changement de compte (même garde-fou par
+    // compte : ne fait rien si déjà fait).
+    if (typeof migrateImagesToStorage === 'function' && !localStorage.getItem(accKey('tjp_images_migrated'))) {
+      migrateImagesToStorage();
+    }
   }
   // Appliquer le thème du nouveau compte
   loadSavedTheme();

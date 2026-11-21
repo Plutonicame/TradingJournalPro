@@ -2102,22 +2102,29 @@ async function deleteTradeImageFromR2(url) {
   }
 }
 
-// Migre toutes les images déjà stockées en base64 (ancien système) vers Supabase
-// Storage, trade par trade. Idempotent : une image déjà migrée (URL, pas data:)
-// est simplement ignorée. Appelée automatiquement une seule fois par compte,
-// à la première connexion suivant la mise à jour (voir initAuth).
+// Migre vers R2 toutes les images encore ailleurs : soit en base64 (très
+// ancien système, directement dans le trade), soit déjà uploadées mais sur
+// Supabase Storage (système intermédiaire, avant l'introduction de R2) — les
+// deux cas existent dans les comptes créés avant la mise en place du quota de
+// stockage R2, et ni l'un ni l'autre n'est compté par ce quota tant que
+// l'image n'est pas réellement sur R2. Idempotent : une image déjà sur R2 est
+// simplement ignorée. Appelée automatiquement une seule fois par compte, à la
+// première connexion suivant la mise à jour (voir initAuth).
 async function migrateImagesToStorage() {
   if (!currentUser || !currentUser.id) return;
   const toMigrate = [];
   APP.trades.forEach((t, ti) => {
     (t.images || []).forEach((src, ii) => {
-      if (typeof src === 'string' && src.startsWith('data:')) toMigrate.push({ti, ii});
+      if (typeof src !== 'string') return;
+      const isBase64 = src.startsWith('data:');
+      const isOldSupabaseStorage = src.includes('.supabase.co/storage/');
+      if (isBase64 || isOldSupabaseStorage) toMigrate.push({ti, ii, oldUrl: isOldSupabaseStorage ? src : null});
     });
   });
   if (!toMigrate.length) return;
   let done = 0,
     failed = 0;
-  for (const {ti, ii} of toMigrate) {
+  for (const {ti, ii, oldUrl} of toMigrate) {
     const t = APP.trades[ti];
     if (!t || !t.images || !t.images[ii]) continue;
     const original = t.images[ii];
@@ -2127,6 +2134,16 @@ async function migrateImagesToStorage() {
       if (uploaded && !uploaded.startsWith('data:')) {
         t.images[ii] = uploaded;
         done++;
+        // L'ancienne image sur Supabase Storage ne sert plus à rien une fois
+        // la nouvelle en place sur R2 — supprimée en best-effort, ça ne doit
+        // jamais faire échouer la migration si ça rate.
+        if (oldUrl) {
+          try {
+            deleteTradeImageFromStorage(oldUrl);
+          } catch (e) {
+            console.warn('Suppression ancienne image (ignorée) :', e);
+          }
+        }
       } else {
         failed++;
       }
@@ -2148,6 +2165,11 @@ async function migrateImagesToStorage() {
 function compressImage(dataUrl, maxWidth = 1920, quality = 0.85) {
   return new Promise(resolve => {
     const img = new Image();
+    // Nécessaire pour pouvoir relire le contenu via canvas.toDataURL() quand
+    // la source est une vraie URL cross-origin (ex: ancienne image encore sur
+    // Supabase Storage, migrée vers R2) — sans ça, le canvas serait "taint"
+    // et toDataURL() lèverait une erreur. Inoffensif pour une data: URL.
+    img.crossOrigin = 'anonymous';
     img.onload = () => {
       let {width, height} = img;
       if (width > maxWidth) {
