@@ -265,7 +265,7 @@ async function tjpRecomputeStorageUsage() {
       users = r.data || [];
     } catch (e) {}
     const nameFor = uid => {
-      if (uid === 'ccefdf06-20fe-457b-97c1-be5acd82bb80') return 'Toi (admin, 4 Go réservés)';
+      if (uid === 'ccefdf06-20fe-457b-97c1-be5acd82bb80') return 'Toi (admin, 5 Go réservés)';
       const u = users.find(x => x.user_id === uid);
       return (u && u.name) || uid.slice(0, 8);
     };
@@ -275,7 +275,7 @@ async function tjpRecomputeStorageUsage() {
       .join('\n');
     alert(
       `Stockage recalculé (${data.objectCount} fichier(s) sur R2) :\n\n${lines || 'Rien trouvé.'}\n\n` +
-        `Rappel du quota : 4 Go réservés à l'admin, 6 Go partagés entre les autres (10 Go au total).`
+        `Rappel du quota : 5 Go réservés à l'admin, 5 Go partagés entre les autres (10 Go au total).`
     );
   } catch (e) {
     console.warn('tjpRecomputeStorageUsage:', e);
