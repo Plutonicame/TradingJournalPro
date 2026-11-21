@@ -2130,13 +2130,32 @@ async function migrateImagesToStorage() {
     const original = t.images[ii];
     try {
       const compressed = await compressImage(original);
+      // GARDE-FOU CRITIQUE : si compressImage() n'a pas pu relire l'image
+      // (ex: image cross-origin refusée par le CORS du bucket Supabase
+      // Storage), elle renvoie l'URL d'origine INCHANGÉE plutôt qu'un vrai
+      // "data:" compressé (voir compressImage). Ça ne compte JAMAIS comme un
+      // succès : avant ce garde-fou, le code ci-dessous envoyait cette URL
+      // telle quelle à uploadTradeImageToR2, qui échouait aussi côté serveur
+      // et renvoyait la même URL inchangée — laquelle, ne commençant pas par
+      // "data:", était prise à tort pour une vraie migration réussie, et
+      // l'ancienne image était alors supprimée pour de bon alors qu'elle
+      // n'avait JAMAIS été copiée vers R2. C'est ce bug qui a fait perdre des
+      // images réelles (confirmé par les logs Supabase Storage).
+      if (typeof compressed !== 'string' || !compressed.startsWith('data:')) {
+        failed++;
+        continue;
+      }
       const uploaded = await uploadTradeImageToR2(compressed);
-      if (uploaded && !uploaded.startsWith('data:')) {
+      // Deuxième garde-fou indépendant : l'upload doit avoir renvoyé une URL
+      // RÉELLEMENT NOUVELLE (pas la même URL d'origine renvoyée telle quelle
+      // en cas d'échec côté uploadTradeImageToR2).
+      if (uploaded && !uploaded.startsWith('data:') && uploaded !== original) {
         t.images[ii] = uploaded;
         done++;
         // L'ancienne image sur Supabase Storage ne sert plus à rien une fois
         // la nouvelle en place sur R2 — supprimée en best-effort, ça ne doit
-        // jamais faire échouer la migration si ça rate.
+        // jamais faire échouer la migration si ça rate. Uniquement atteint
+        // maintenant si la nouvelle image est bel et bien sur R2.
         if (oldUrl) {
           try {
             deleteTradeImageFromStorage(oldUrl);
