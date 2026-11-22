@@ -2506,7 +2506,8 @@ const TITLE_DEFAULTS = {
   '--crt-riskreglages': '#00e5a0',
   '--crt-sauvegarde': '#00e5a0',
   '--crt-themestylo': '#00e5a0',
-  '--crt-resume': '#00e5a0'
+  '--crt-resume': '#00e5a0',
+  '--crt-recapmensuel': '#00e5a0'
 };
 function ensureTitleThemeDefaults() {
   Object.entries(TITLE_DEFAULTS).forEach(([vn, def]) => {
@@ -6567,6 +6568,12 @@ function buildTV() {
       l: 'Titre — Résumé & Recommandations',
       page: 'Analyse IA',
       section: 'Points Clés'
+    },
+    {
+      v: '--crt-recapmensuel',
+      l: 'Titre — Récap Mensuel',
+      page: 'Analyse IA',
+      section: 'Récap Mensuel'
     },
     {v: '--pt-ami', l: 'Titre de la page', page: 'Ami', section: 'Titre de page'},
     {
