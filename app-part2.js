@@ -4849,25 +4849,6 @@ function pmComputeRecords(allRealTrades, monthTrades) {
   return r;
 }
 
-// ── Comparaison avec les amis (optionnelle, dégradée proprement si indisponible) ──
-// N'expose QUE des agrégats mensuels (P&L, winrate, nb de trades) — jamais les
-// trades détaillés, notes ou images des amis. Fonction SQL tjp_friends_month_stats,
-// restreinte aux contacts que l'utilisateur courant a lui-même ajoutés (tjp_contacts).
-async function pmFetchFriendsStats(year, month) {
-  try {
-    if (typeof sb === 'undefined' || !currentUser) return [];
-    const {data, error} = await sb.rpc('tjp_friends_month_stats', {p_year: year, p_month: month + 1});
-    if (error) {
-      console.warn('Comparaison amis indisponible :', error.message || error);
-      return [];
-    }
-    return data || [];
-  } catch (e) {
-    console.warn('Comparaison amis indisponible :', e);
-    return [];
-  }
-}
-
 // Construit le prompt envoyé à l'IA (pcAskAI) : toutes les données nécessaires sont
 // intégrées DIRECTEMENT dans le texte de la question (chiffres déjà calculés côté client,
 // jamais recalculés par l'IA), pour ne jamais dépendre d'un éventuel filtrage par dates
@@ -5157,24 +5138,6 @@ function pmBuildPDF(o) {
     addText(`⚡ Le plus de trades en une seule journée : ${R.mostTradesInDay}`, 11);
   }
 
-  // ── Comparaison avec tes amis (seulement si des données existent) ──
-  if (o.friendsStats && o.friendsStats.length) {
-    addPage();
-    addTitle('Comparaison avec tes amis');
-    const rows = o.friendsStats
-      .map(f => ({pseudo: f.pseudo || 'Ami', pnl: Number(f.pnl) || 0, winrate: Number(f.winrate) || 0, n: Number(f.n_trades) || 0}))
-      .concat([{pseudo: 'Toi', pnl: o.curStats.pnl, winrate: o.curStats.winrate, n: o.curStats.n, isMe: true}])
-      .sort((a, b) => b.pnl - a.pnl);
-    const myRank = rows.findIndex(r => r.isMe) + 1;
-    addText(`Ce mois-ci, tu es classé ${myRank}${myRank === 1 ? 'er' : 'ème'} sur ${rows.length} (toi inclus), classé par P&L.`, 11);
-    rows.forEach((r, i) => {
-      addText(
-        `${i + 1}. ${r.isMe ? 'Toi' : r.pseudo} — ${r.pnl >= 0 ? '+' : ''}${fr2(r.pnl)}€ • Winrate ${r.winrate.toFixed(1)}% • ${r.n} trade(s)`,
-        10.5
-      );
-    });
-  }
-
   // ── Évolution vs mois précédent ──
   addPage();
   addTitle('Évolution par rapport au mois précédent');
@@ -5236,9 +5199,6 @@ async function generateMonthlyReport() {
     statusEl.textContent = 'Capture des KPI du mois...';
     const kpiImg = await pmCaptureKpiReal(curStats, records, theme);
 
-    statusEl.textContent = 'Comparaison avec tes amis...';
-    const friendsStats = await pmFetchFriendsStats(cur.year, cur.month);
-
     statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
     const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, records);
     const {answer} = await pcAskAI(prompt, APP.trades || [], []);
@@ -5283,7 +5243,6 @@ async function generateMonthlyReport() {
       curStats,
       prevStats,
       records,
-      friendsStats,
       eqImg,
       pnlImg,
       winrate,
