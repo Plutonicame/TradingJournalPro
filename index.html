@@ -41,6 +41,28 @@
   tryLoad(0);
 })();
 </script>
+<!-- Captures d'écran réelles (calendrier, cartes KPI) pour le PDF « Récap mensuel » :
+     même chaîne de secours multi-CDN que jsPDF ci-dessus. -->
+<script>
+(function () {
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+    'https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js'
+  ];
+  function tryLoad(i) {
+    if (i >= sources.length) {
+      console.error('html2canvas : aucune des sources CDN n\'a pu être chargée.');
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = sources[i];
+    s.onerror = () => tryLoad(i + 1);
+    document.head.appendChild(s);
+  }
+  tryLoad(0);
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
