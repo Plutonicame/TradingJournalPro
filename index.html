@@ -17,8 +17,30 @@
 <script src="chart.min.js"></script>
 <script src="sortable.min.js"></script>
 <script src="purify.min.js"></script>
-<!-- Génération du PDF « Récap mensuel » (page Analyse IA) -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+<!-- Génération du PDF « Récap mensuel » (page Analyse IA). Plusieurs sources de
+     secours : certains réseaux/applis bloquent cdnjs.cloudflare.com (alors que
+     jsdelivr, déjà utilisé plus haut pour supabase-js, passe) — si la première
+     échoue, on essaie la suivante automatiquement, sans rien demander à l'utilisateur. -->
+<script>
+(function () {
+  const sources = [
+    'https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js',
+    'https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js'
+  ];
+  function tryLoad(i) {
+    if (i >= sources.length) {
+      console.error('jsPDF : aucune des sources CDN n\'a pu être chargée.');
+      return;
+    }
+    const s = document.createElement('script');
+    s.src = sources[i];
+    s.onerror = () => tryLoad(i + 1);
+    document.head.appendChild(s);
+  }
+  tryLoad(0);
+})();
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
