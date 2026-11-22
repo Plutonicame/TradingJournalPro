@@ -4454,10 +4454,74 @@ function pmStats(trades) {
   return {n, winrate, pnl, pf, avgRR};
 }
 
+// Récupère toutes les couleurs de thème (par défaut OU personnalisées par l'utilisateur
+// dans Paramètres > Thème) nécessaires au PDF, en une fois — gc() lit toujours la valeur
+// RÉELLEMENT appliquée (via getComputedStyle), donc un thème tout noir ou personnalisé
+// est automatiquement repris, sans rien coder en dur.
+function pmTheme() {
+  return {
+    bg: gc('--bg') || '#0b0f1a',
+    text: gc('--text') || '#e2e8f0',
+    muted: gc('--muted') || '#64748b',
+    card: gc('--card') || '#161d2e',
+    border: gc('--border') || '#1e2d45',
+    green: gc('--green') || '#00e5a0',
+    red: gc('--red') || '#ef4444',
+    titleColor: gc('--crt-recapmensuel') || gc('--green') || '#00e5a0',
+    eqLine: gc('--eq-line') || '#00e5a0',
+    eqFillTop: gc('--eq-fill-top') || 'rgba(0,229,160,.32)',
+    eqFillBot: gc('--eq-fill-bot') || 'rgba(0,229,160,0)',
+    eqBg: gc('--eq-bg') || '#161d2e',
+    eqAxis: gc('--eq-axis') || '#64748b',
+    eqGrid: gc('--eq-grid') || 'rgba(100,116,139,.1)',
+    pnlPos: gc('--pnl-bar-pos') || '#3b82f6',
+    pnlNeg: gc('--pnl-bar-neg') || '#ef4444',
+    pnlAxis: gc('--pnl-axis') || '#64748b',
+    // Mêmes variables EXACTES que la page Calendrier — le calendrier du PDF doit être
+    // un calque conforme à ce que l'utilisateur voit réellement dans l'app.
+    calBg: gc('--cal-bg') || '#161d2e',
+    calDayBorder: gc('--cal-day-border') || '#1e2d45',
+    calPosBg: gc('--cal-pos-bg') || 'rgba(0,229,160,.16)',
+    calNegBg: gc('--cal-neg-bg') || 'rgba(239,68,68,.16)',
+    calPosBd: gc('--cal-pos-bd') || '#00e5a0',
+    calNegBd: gc('--cal-neg-bd') || '#ef4444',
+    calDayNum: gc('--cal-day-num-color') || '#64748b',
+    calDayNumPos: gc('--cal-day-pos-cal-day-num-color') || '#00e5a0',
+    calDayNumNeg: gc('--cal-day-neg-cal-day-num-color') || '#ef4444',
+    calPnlPos: gc('--cal-day-pos-cal-pnl-color') || '#00e5a0',
+    calPnlNeg: gc('--cal-day-neg-cal-pnl-color') || '#ef4444',
+    calDow: gc('--cal-dow-color') || '#64748b',
+    calBlockBg: gc('--cal-month-block-background') || '#161d2e',
+    calBlockBorder: gc('--cal-month-block-border') || '#1e2d45',
+    calHeaderBg: gc('--cal-month-header-background') || '#111827',
+    calHeaderColor: gc('--cal-month-header-cur-color') || '#00e5a0'
+  };
+}
+// Convertit n'importe quelle couleur CSS valide (hex, rgb(), rgba(), nom...) en [r,g,b]
+// pour jsPDF (qui a besoin de canaux numériques) — via un canvas 1×1, donc toujours exact,
+// quel que soit le format dans lequel le thème a stocké la couleur.
+function pmRgb(cssColor, fallback) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 1;
+    c.height = 1;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = fallback || '#000000';
+    ctx.fillRect(0, 0, 1, 1);
+    ctx.fillStyle = cssColor || fallback || '#000000';
+    ctx.fillRect(0, 0, 1, 1);
+    const d = ctx.getImageData(0, 0, 1, 1).data;
+    return [d[0], d[1], d[2]];
+  } catch (e) {
+    return [0, 0, 0];
+  }
+}
+
 // Deux graphiques (courbe de capital cumulée, P&L par jour) rendus via des instances
 // Chart.js temporaires hors écran (jamais affichées à l'utilisateur), capturées en PNG
-// puis détruites — n'affecte aucun graphique visible ailleurs dans l'app.
-async function pmBuildChartsImages(trades) {
+// puis détruites — n'affecte aucun graphique visible ailleurs dans l'app. Couleurs reprises
+// du thème actuel de l'utilisateur (voir pmTheme()), pas de couleurs fixes.
+async function pmBuildChartsImages(trades, th) {
   const sorted = [...trades].sort(
     (a, b) => (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || '')
   );
@@ -4488,17 +4552,30 @@ async function pmBuildChartsImages(trades) {
     return c;
   };
   const wait = () => new Promise(r => setTimeout(r, 80));
+  // Remplit tout le canvas avec le fond du thème AVANT que Chart.js ne dessine par-dessus
+  // (sans ça, les zones hors graphique resteraient transparentes -> blanc dans le PDF).
+  const bgPlugin = bgColor => ({
+    id: 'pmBg',
+    beforeDraw(chart) {
+      const {ctx, width, height} = chart;
+      ctx.save();
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+    }
+  });
 
   const eqCanvas = mk(900, 400);
   const eqChart = new Chart(eqCanvas.getContext('2d'), {
     type: 'line',
+    plugins: [bgPlugin(th.eqBg)],
     data: {
       labels: eqLabels,
       datasets: [
         {
           data: eqData,
-          borderColor: '#00b386',
-          backgroundColor: 'rgba(0,179,134,.15)',
+          borderColor: th.eqLine,
+          backgroundColor: th.eqFillTop,
           borderWidth: 2.5,
           fill: true,
           tension: 0,
@@ -4511,11 +4588,14 @@ async function pmBuildChartsImages(trades) {
       animation: false,
       plugins: {
         legend: {display: false},
-        title: {display: true, text: 'Évolution du capital (cumul du mois)', color: '#111', font: {size: 16}}
+        title: {display: true, text: 'Évolution du capital (cumul du mois)', color: th.text, font: {size: 16}}
       },
       scales: {
-        x: {ticks: {color: '#444'}},
-        y: {ticks: {color: '#444', callback: v => v.toLocaleString('fr-FR') + '€'}}
+        x: {grid: {color: th.eqGrid}, ticks: {color: th.eqAxis}},
+        y: {
+          grid: {color: th.eqGrid},
+          ticks: {color: th.eqAxis, callback: v => v.toLocaleString('fr-FR') + '€'}
+        }
       }
     }
   });
@@ -4527,20 +4607,24 @@ async function pmBuildChartsImages(trades) {
   const pnlCanvas = mk(900, 400);
   const pnlChart = new Chart(pnlCanvas.getContext('2d'), {
     type: 'bar',
+    plugins: [bgPlugin(th.eqBg)],
     data: {
       labels: dayLabelsFr,
-      datasets: [{data: dayData, backgroundColor: dayData.map(v => (v >= 0 ? '#3b82f6' : '#ef4444'))}]
+      datasets: [{data: dayData, backgroundColor: dayData.map(v => (v >= 0 ? th.pnlPos : th.pnlNeg))}]
     },
     options: {
       responsive: false,
       animation: false,
       plugins: {
         legend: {display: false},
-        title: {display: true, text: 'P&L par jour', color: '#111', font: {size: 16}}
+        title: {display: true, text: 'P&L par jour', color: th.text, font: {size: 16}}
       },
       scales: {
-        x: {ticks: {color: '#444', maxRotation: 60}},
-        y: {ticks: {color: '#444', callback: v => v.toLocaleString('fr-FR') + '€'}}
+        x: {grid: {color: th.eqGrid}, ticks: {color: th.pnlAxis, maxRotation: 60}},
+        y: {
+          grid: {color: th.eqGrid},
+          ticks: {color: th.pnlAxis, callback: v => v.toLocaleString('fr-FR') + '€'}
+        }
       }
     }
   });
@@ -4553,8 +4637,11 @@ async function pmBuildChartsImages(trades) {
 }
 
 // Calendrier du mois dessiné à la main sur un canvas (pas de dépendance à la vue
-// calendrier interactive de l'app) : une case par jour, colorée selon le P&L du jour.
-function pmBuildCalendarImage(trades, year, month) {
+// calendrier interactive de l'app, pour ne jamais en perturber le rendu normal) — mais
+// avec EXACTEMENT les mêmes variables de couleur que la vraie page Calendrier (voir
+// .cal-day / .cal-day.pos / .cal-day.neg dans style.css), donc un reflet fidèle de ce
+// que l'utilisateur voit réellement, thème personnalisé compris.
+function pmBuildCalendarImage(trades, year, month, th) {
   const byDay = {};
   trades.forEach(t => {
     if (!t.date) return;
@@ -4567,7 +4654,7 @@ function pmBuildCalendarImage(trades, year, month) {
     cellW = 110,
     cellH = 80,
     pad = 10,
-    headerH = 40;
+    headerH = 44;
   const rows = Math.ceil((startWeekday + daysInMonth) / cols);
   const w = cols * cellW + pad * 2,
     h = headerH + rows * cellH + pad * 2;
@@ -4575,13 +4662,20 @@ function pmBuildCalendarImage(trades, year, month) {
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#ffffff';
+  // Fond du bloc calendrier (même variable que .cal-month-block)
+  ctx.fillStyle = th.calBlockBg;
   ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = th.calBlockBorder;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+  // Bandeau d'en-tête (même variable que .cal-month-header)
+  ctx.fillStyle = th.calHeaderBg;
+  ctx.fillRect(0, 0, w, headerH);
   const jours = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
-  ctx.font = 'bold 14px sans-serif';
-  ctx.fillStyle = '#333';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillStyle = th.calDow;
   ctx.textAlign = 'center';
-  jours.forEach((j, i) => ctx.fillText(j, pad + i * cellW + cellW / 2, pad + 22));
+  jours.forEach((j, i) => ctx.fillText(j, pad + i * cellW + cellW / 2, headerH / 2 + 4));
   let day = 1;
   for (let r = 0; r < rows; r++) {
     for (let col = 0; col < cols; col++) {
@@ -4591,22 +4685,19 @@ function pmBuildCalendarImage(trades, year, month) {
         y = headerH + pad + r * cellH;
       const ymd = year + '-' + String(month + 1).padStart(2, '0') + '-' + String(day).padStart(2, '0');
       const pnl = byDay[ymd];
-      let bg = '#f2f2f2';
-      if (pnl !== undefined) {
-        const intensity = Math.min(0.85, 0.25 + Math.abs(pnl) / 400);
-        bg = pnl >= 0 ? `rgba(59,130,246,${intensity})` : `rgba(239,68,68,${intensity})`;
-      }
-      ctx.fillStyle = bg;
+      const pos = pnl !== undefined && pnl >= 0;
+      const neg = pnl !== undefined && pnl < 0;
+      ctx.fillStyle = pos ? th.calPosBg : neg ? th.calNegBg : th.calBg;
       ctx.fillRect(x, y, cellW - 4, cellH - 4);
-      ctx.strokeStyle = '#ddd';
+      ctx.strokeStyle = pos ? th.calPosBd : neg ? th.calNegBd : th.calDayBorder;
       ctx.strokeRect(x, y, cellW - 4, cellH - 4);
-      ctx.fillStyle = '#222';
-      ctx.font = '11px sans-serif';
+      ctx.fillStyle = pos ? th.calDayNumPos : neg ? th.calDayNumNeg : th.calDayNum;
+      ctx.font = 'bold 11px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(String(day), x + 6, y + 16);
       if (pnl !== undefined) {
         ctx.font = 'bold 12px sans-serif';
-        ctx.fillStyle = pnl >= 0 ? '#0a3d91' : '#7a1212';
+        ctx.fillStyle = pos ? th.calPnlPos : th.calPnlNeg;
         ctx.textAlign = 'center';
         ctx.fillText((pnl >= 0 ? '+' : '') + pnl.toFixed(0) + '€', x + (cellW - 4) / 2, y + (cellH - 4) / 2 + 10);
       }
@@ -4690,6 +4781,13 @@ function pmParseSection(answer, tag) {
 // identique chaque mois : page de garde, intro + stats, graphiques, calendrier,
 // analyse trade par trade, points forts/axes, évolution, conclusion.
 function pmBuildPDF(o) {
+  const th = o.theme;
+  const bgRgb = pmRgb(th.bg, '#0b0f1a');
+  const textRgb = pmRgb(th.text, '#e2e8f0');
+  const mutedRgb = pmRgb(th.muted, '#64748b');
+  const titleRgb = pmRgb(th.titleColor, '#00e5a0');
+  const greenRgb = pmRgb(th.green, '#00e5a0');
+
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit: 'pt', format: 'a4'});
   const pageW = doc.internal.pageSize.getWidth();
@@ -4697,9 +4795,20 @@ function pmBuildPDF(o) {
   const margin = 40;
   let y = margin;
 
+  // Chaque page du PDF reprend le fond du thème actuel (--bg) — jamais de fond blanc
+  // par défaut, pour que le rendu ressemble vraiment à l'app, thème sombre ou clair.
+  const fillPageBg = () => {
+    doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
+    doc.rect(0, 0, pageW, pageH, 'F');
+  };
+  const addPage = () => {
+    doc.addPage();
+    fillPageBg();
+  };
+
   const ensureSpace = h => {
     if (y + h > pageH - margin) {
-      doc.addPage();
+      addPage();
       y = margin;
     }
   };
@@ -4707,14 +4816,14 @@ function pmBuildPDF(o) {
     ensureSpace(size + 16);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(size);
-    doc.setTextColor(10, 90, 70);
+    doc.setTextColor(titleRgb[0], titleRgb[1], titleRgb[2]);
     doc.text(text, margin, y);
     y += size * 1.1;
   };
   const addText = (text, size = 10.5) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(size);
-    doc.setTextColor(40, 40, 40);
+    doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
     const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
     lines.forEach(line => {
       ensureSpace(size * 1.4);
@@ -4724,22 +4833,22 @@ function pmBuildPDF(o) {
     y += 8;
   };
 
-  // ── Page de garde ──
-  doc.setFillColor(10, 14, 14);
-  doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setTextColor(0, 229, 160);
+  // ── Page de garde (fond du thème actuel) ──
+  fillPageBg();
+  doc.setTextColor(titleRgb[0], titleRgb[1], titleRgb[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(26);
   doc.text('RÉCAP MENSUEL', margin, pageH / 2 - 40);
   doc.setFontSize(20);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
   doc.text(o.monthLabel, margin, pageH / 2);
   doc.setFontSize(11);
-  doc.setTextColor(180, 180, 180);
+  doc.setTextColor(mutedRgb[0], mutedRgb[1], mutedRgb[2]);
   doc.text('Généré le ' + new Date().toLocaleDateString('fr-FR'), margin, pageH / 2 + 30);
+  doc.setTextColor(greenRgb[0], greenRgb[1], greenRgb[2]);
   doc.text('Trading Journal Pro', margin, pageH - margin);
 
-  doc.addPage();
+  addPage();
   y = margin;
   addTitle('Introduction');
   addText(o.intro);
@@ -4765,7 +4874,7 @@ function pmBuildPDF(o) {
   doc.addImage(o.pnlImg, 'PNG', margin, y, chartW, chartH);
   y += chartH + 24;
 
-  doc.addPage();
+  addPage();
   y = margin;
   addTitle('Calendrier du mois');
   const calW = pageW - margin * 2;
@@ -4773,19 +4882,19 @@ function pmBuildPDF(o) {
   doc.addImage(o.calImg, 'PNG', margin, y, calW, calH);
   y += calH + 20;
 
-  doc.addPage();
+  addPage();
   y = margin;
   addTitle('Analyse trade par trade');
   o.tradeLines.forEach(line => addText(line, 9.5));
 
-  doc.addPage();
+  addPage();
   y = margin;
   addTitle('Points forts');
   addText(o.forces);
   addTitle('Axes de travail');
   addText(o.axes);
 
-  doc.addPage();
+  addPage();
   y = margin;
   addTitle('Évolution par rapport au mois précédent');
   addText(o.evolution);
@@ -4829,8 +4938,9 @@ async function generateMonthlyReport() {
     const prevStats = pmStats(prevTrades);
 
     statusEl.textContent = 'Génération des graphiques...';
-    const {eqImg, pnlImg} = await pmBuildChartsImages(monthTrades);
-    const cal = pmBuildCalendarImage(monthTrades, cur.year, cur.month);
+    const theme = pmTheme();
+    const {eqImg, pnlImg} = await pmBuildChartsImages(monthTrades, theme);
+    const cal = pmBuildCalendarImage(monthTrades, cur.year, cur.month, theme);
 
     statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
     const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats);
@@ -4879,7 +4989,8 @@ async function generateMonthlyReport() {
       pnlImg,
       calImg: cal.dataUrl,
       calW: cal.w,
-      calH: cal.h
+      calH: cal.h,
+      theme
     });
 
     const filename = `Récap mensuel - ${cur.label}.pdf`;
