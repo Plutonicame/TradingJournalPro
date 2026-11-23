@@ -4501,8 +4501,6 @@ function pmTheme() {
     pieLose: gc('--pie-lose') || '#ef4444',
     pieNeutral: gc('--pie-neutral') || '#64748b',
     pieBorder: gc('--winrate-slice-border') || '#0b0f1a',
-    // Couleurs des 9 cartes KPI (--kpi1 à --kpi9), reprises à l'identique pour la capture
-    // hors-écran des cartes KPI du mois (voir pmCaptureKpiReal()).
     kpi: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => gc(`--kpi${i}`) || '#00e5a0')
   };
 }
@@ -4526,18 +4524,48 @@ function pmRgb(cssColor, fallback) {
   }
 }
 
-// ── Captures d'écran RÉELLES (pas de redessin à la main) ───────────────────
-// pmSnapshot() crée un conteneur hors-écran (jamais visible, jamais affiché à
-// l'utilisateur), y injecte du HTML qui réutilise LES MÊMES classes CSS que
-// l'app (donc EXACTEMENT le même design, couleurs de thème comprises), attend
-// un frame de rendu, puis utilise html2canvas pour en faire une vraie capture
-// pixel — comme un screenshot — avant de tout détruire. N'affecte jamais une
-// page visible de l'app.
+// ── Captures d'écran RÉELLES de l'app (jamais de recréation à partir des données) ──
+// Principe : pour chaque élément (graphiques, calendrier, cartes KPI), on prend une
+// vraie capture html2canvas du VRAI élément DOM de l'app, tel qu'affiché avec le
+// thème/les modifications personnelles de l'utilisateur — jamais un clone redessiné
+// avec des données recalculées à côté. Quand il faut voir un mois passé (graphiques,
+// calendrier), on pilote brièvement la vraie page concernée hors-écran (jamais visible
+// par l'utilisateur, qui ne voit donc rien bouger à l'écran), on capture, puis on
+// remet tout exactement comme avant.
 async function pmEnsureSnapshotTools() {
   if (typeof html2canvas === 'undefined') {
     throw new Error("L'outil de capture d'écran n'a pas pu se charger (vérifie ta connexion puis réessaie).");
   }
 }
+async function pmCaptureEl(el) {
+  await pmEnsureSnapshotTools();
+  const canvas = await html2canvas(el, {backgroundColor: null, scale: 2, logging: false, useCORS: true});
+  return {dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height};
+}
+// Rend une page de l'app (normalement cachée via .page{display:none}) temporairement
+// « affichée » mais totalement hors écran (position fixed, très loin à gauche) le
+// temps de fn() — jamais vue par l'utilisateur, aucune autre page affectée — puis
+// restaure exactement son style d'origine.
+async function pmWithPageVisible(pageId, fn) {
+  const el = document.getElementById(pageId);
+  if (!el) throw new Error('Page "' + pageId + '" introuvable.');
+  const savedStyle = el.getAttribute('style') || '';
+  el.style.position = 'fixed';
+  el.style.left = '-99999px';
+  el.style.top = '0';
+  el.style.zIndex = '-1';
+  el.style.display = 'block';
+  el.style.width = '1400px';
+  try {
+    return await fn(el);
+  } finally {
+    if (savedStyle) el.setAttribute('style', savedStyle);
+    else el.removeAttribute('style');
+  }
+}
+// Crée un conteneur hors-écran pour y injecter du HTML qui réutilise de vraies classes
+// CSS de l'app (ex : la fiche de trade partagée dans le chat) sans dépendre d'une page
+// particulière de l'app — utilisé pour les fiches de trade (voir pmCaptureTradeCard).
 async function pmSnapshot(buildFn, width) {
   await pmEnsureSnapshotTools();
   const host = document.createElement('div');
@@ -4550,310 +4578,140 @@ async function pmSnapshot(buildFn, width) {
   document.body.appendChild(host);
   try {
     buildFn(host);
-    // Deux frames : laisse le navigateur calculer la mise en page avant la capture.
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-    const canvas = await html2canvas(host, {backgroundColor: null, scale: 2, logging: false});
-    return {dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height};
+    return await pmCaptureEl(host);
   } finally {
     host.remove();
   }
 }
 
-// Capture RÉELLE du calendrier du mois : réutilise directement renderMonthGrid()
-// (la fonction qui dessine le vrai calendrier interactif, voir app-part1.js) donc
-// c'est EXACTEMENT le même HTML/CSS que la page Calendrier — pas une
-// reconstitution approximative. N'affecte jamais la vraie page Calendrier
-// (conteneur totalement séparé, hors-écran).
+// Graphiques RÉELS (courbe de capital, P&L quotidien, win rate) : on pilote la vraie
+// page Track Record hors-écran, on force brièvement filterT('mois') à cibler le mois
+// analysé via PM_NOW_OVERRIDE (voir app-part1.js), on relance les VRAIES fonctions de
+// dessin (drawEquity/drawPnl/drawPie, qui dessinent sur les vrais canvas #cEq/#cPnl/
+// #cPie), on capture chaque vraie carte, puis on restaure tout (refreshAllCharts()
+// remet les vraies données actuelles sur les vrais graphiques, exactement comme avant).
+async function pmCaptureTrackRecordCharts(cur) {
+  return pmWithPageVisible('page-trackrecord', async () => {
+    PM_NOW_OVERRIDE = cur.last;
+    try {
+      drawEquity('mois');
+      drawPnl('mois');
+      drawPie('mois');
+      await new Promise(r => setTimeout(r, 1100));
+      const eqEl = document.getElementById('cEq').closest('.chart-card');
+      const pnlEl = document.getElementById('cPnl').closest('.chart-card');
+      const pieEl = document.getElementById('cPie').closest('.chart-card');
+      const eq = await pmCaptureEl(eqEl);
+      const pnl = await pmCaptureEl(pnlEl);
+      const pie = await pmCaptureEl(pieEl);
+      return {eq, pnl, pie};
+    } finally {
+      PM_NOW_OVERRIDE = null;
+      if (typeof refreshAllCharts === 'function') refreshAllCharts();
+    }
+  });
+}
+// Cartes KPI RÉELLES, telles qu'affichées aujourd'hui dans l'app — avec tes icônes,
+// couleurs et éventuelles modifications personnelles (mode crayon), pas une
+// reconstitution. Ce sont des compteurs globaux (comme dans l'app, pas de filtre par
+// mois ici), présentés comme « vue d'ensemble » dans le PDF.
+async function pmCaptureKpiStripReal() {
+  return pmWithPageVisible('page-trackrecord', async () => {
+    if (typeof updateKPIs === 'function') updateKPIs();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const el = document.querySelector('#page-trackrecord .kpi-strip');
+    if (!el) throw new Error('Bandeau KPI introuvable.');
+    return pmCaptureEl(el);
+  });
+}
+// Calendrier RÉEL : on pointe brièvement calD sur le mois analysé et on relance le
+// vrai renderCalendar() (page Calendrier, hors-écran), qui dessine le vrai calendrier
+// ET ses stats (trades, résultat, RR moyen) exactement comme quand tu l'ouvres toi-même
+// — puis on restaure calD et on re-render pour remettre la vraie page comme avant.
 async function pmCaptureCalendarReal(year, month) {
+  const savedY = calD.getFullYear(),
+    savedM = calD.getMonth();
+  return pmWithPageVisible('page-calendrier', async () => {
+    calD = new Date(year, month, 1);
+    renderCalendar();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const el = document.getElementById('calCur');
+    const img = await pmCaptureEl(el);
+    calD = new Date(savedY, savedM, 1);
+    renderCalendar();
+    return img;
+  });
+}
+// Fiche technique RÉELLE d'un trade : EXACTEMENT la même que celle envoyée dans le
+// chat avec les amis (fcBuildTradeCardHtml, voir friends-chat.js) — mêmes champs,
+// mêmes classes CSS, mêmes images — capturée hors-écran pour le PDF.
+function pmBuildTradeCardPayload(t) {
+  const capInfo = typeof fcCapBeforeAfterPct === 'function' ? fcCapBeforeAfterPct(t) : null;
+  return {
+    id: t.id,
+    date: t.date || '',
+    heure: t.heure || '',
+    dateFin: t.dateFin || '',
+    heureFin: t.heureFin || '',
+    risqueEur: t.risqueEur || 0,
+    session: t.session || '',
+    paire: t.paire || '',
+    dir: t.dir || '',
+    rrCible: t.rrCible || 0,
+    rrReel: typeof computeRR === 'function' ? computeRR(t) : t.rrPris || 0,
+    res: t.res || 0,
+    resPct: capInfo ? capInfo.pct : null,
+    capitalAvant: capInfo ? capInfo.avant : null,
+    capitalApres: capInfo ? capInfo.apres : null,
+    mgmt: t.mgmt || '',
+    reprend: t.reprend || '',
+    notes: t.notes || '',
+    stars: t.stars || 0,
+    tf: t.tf || '',
+    conf: t.conf || '',
+    backtest: !!t.backtest,
+    customFields: typeof fcCollectCustomFields === 'function' ? fcCollectCustomFields(t) : [],
+    images: Array.isArray(t.images) ? t.images.slice(0, 6) : []
+  };
+}
+async function pmCaptureTradeCard(t) {
+  if (typeof fcBuildTradeCardHtml !== 'function') return null;
+  const payload = pmBuildTradeCardPayload(t);
   return pmSnapshot(host => {
-    host.className = 'cal-month-block';
-    host.innerHTML =
-      `<div class="cal-month-header cur">${MNL[month]} ${year}</div>` +
-      `<div class="cal-grid">${renderMonthGrid(year, month)}</div>`;
-  }, 700);
+    host.className = 'fc-trade-card';
+    host.innerHTML = fcBuildTradeCardHtml(payload);
+  }, 330);
 }
 
-// Capture RÉELLE des cartes KPI du mois : même structure/classes que le vrai
-// bandeau .kpi-strip de la page Track Record (voir index.html), remplie avec
-// les stats du mois analysé plutôt que les stats "tout" affichées en direct
-// dans l'app — sans jamais toucher au vrai bandeau visible par l'utilisateur.
-async function pmCaptureKpiReal(curStats, records, th) {
-  const fr = n => (n || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  const pnlColor = curStats.pnl >= 0 ? th.green : th.red;
-  const cards = [
-    {icon: '📈', label: 'P&L du mois', value: (curStats.pnl >= 0 ? '+' : '') + fr(curStats.pnl) + '€', color: pnlColor, bar: th.kpi[1]},
-    {icon: '🎯', label: 'Win Rate', value: curStats.winrate.toFixed(1) + '%', color: th.kpi[2], bar: th.kpi[2]},
-    {icon: '⚖️', label: 'RR Moyen', value: curStats.avgRR.toFixed(2) + 'R', color: th.kpi[3], bar: th.kpi[3]},
-    {icon: '📊', label: 'Profit Factor', value: isFinite(curStats.pf) ? curStats.pf.toFixed(2) : '∞', color: th.kpi[4], bar: th.kpi[4]},
-    {icon: '🔢', label: 'Trades', value: String(curStats.n), color: th.kpi[6], bar: th.kpi[6]},
-    {
-      icon: '🏆',
-      label: 'Meilleur trade',
-      value: records.bestTradeThisMonth ? (records.bestTradeThisMonth.res >= 0 ? '+' : '') + fr(records.bestTradeThisMonth.res) + '€' : '—',
-      color: th.green,
-      bar: th.kpi[1]
-    }
-  ];
-  const html =
-    '<div class="kpi-strip">' +
-    cards
-      .map(
-        c =>
-          `<div class="kpi-card"><div class="kpi-bar" style="background:${c.bar}"></div>` +
-          `<div class="kpi-icon">${c.icon}</div>` +
-          `<div class="kpi-label">${c.label}</div>` +
-          `<div class="kpi-value" style="color:${c.color}">${c.value}</div></div>`
-      )
-      .join('') +
-    '</div>';
-  return pmSnapshot(host => {
-    host.innerHTML = html;
-  }, 900);
+// ── Stats complémentaires calculées côté client (jamais par l'IA) ──────────────
+// Répartition gagnants/perdants : taille moyenne des gains/pertes, plus gros gain,
+// plus grosse perte — sert à détailler la page Win Rate au-delà du simple comptage.
+function pmWinLossBreakdown(trades) {
+  const w = trades.filter(t => (t.res || 0) > 0);
+  const l = trades.filter(t => (t.res || 0) < 0);
+  const avgWin = w.length ? w.reduce((s, t) => s + t.res, 0) / w.length : 0;
+  const avgLoss = l.length ? l.reduce((s, t) => s + t.res, 0) / l.length : 0;
+  const biggestWin = w.length ? Math.max(...w.map(t => t.res)) : 0;
+  const biggestLoss = l.length ? Math.min(...l.map(t => t.res)) : 0;
+  return {avgWin, avgLoss, biggestWin, biggestLoss};
 }
-
-// Graphique Win Rate (donut) : EXACTEMENT la même configuration Chart.js que
-// drawPie() dans app-part1.js (mêmes couleurs --pie-win/--pie-lose/--pie-neutral,
-// même anneau à 60%), rendu hors-écran sur les trades du mois analysé — sans
-// jamais toucher au vrai graphique visible de la page Track Record.
-async function pmBuildWinrateChart(trades, th) {
-  const g = trades.filter(t => t.res > 0).length;
-  const p = trades.filter(t => t.res < 0).length;
-  const n = trades.filter(t => t.res === 0).length;
-  const c = document.createElement('canvas');
-  c.width = 700;
-  c.height = 700;
-  c.style.position = 'fixed';
-  c.style.left = '-9999px';
-  document.body.appendChild(c);
-  const bgPlugin = {
-    id: 'pmBg2',
-    beforeDraw(chart) {
-      const {ctx, width, height} = chart;
-      ctx.save();
-      ctx.fillStyle = th.card;
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
-    }
-  };
-  const chart = new Chart(c.getContext('2d'), {
-    type: 'doughnut',
-    plugins: [bgPlugin],
-    data: {
-      labels: ['Gagnants', 'Perdants', 'Nuls'],
-      datasets: [
-        {
-          data: [g, p, n],
-          backgroundColor: [th.pieWin, th.pieLose, th.pieNeutral],
-          borderColor: th.pieBorder,
-          borderWidth: 3
-        }
-      ]
-    },
-    options: {
-      responsive: false,
-      animation: false,
-      cutout: '60%',
-      plugins: {
-        legend: {
-          position: 'bottom',
-          align: 'center',
-          labels: {padding: 22, color: th.text, font: {size: 22}, boxWidth: 26, boxHeight: 26}
-        }
-      }
-    }
-  });
-  await new Promise(r => setTimeout(r, 80));
-  const dataUrl = c.toDataURL('image/png');
-  chart.destroy();
-  c.remove();
-  return {dataUrl, g, p, n};
-}
-
-// Deux graphiques (courbe de capital cumulée, P&L par jour) rendus via des instances
-// Chart.js temporaires hors écran (jamais affichées à l'utilisateur), capturées en PNG
-// puis détruites — n'affecte aucun graphique visible ailleurs dans l'app. Couleurs reprises
-// du thème actuel de l'utilisateur (voir pmTheme()), pas de couleurs fixes.
-async function pmBuildChartsImages(trades, th) {
-  const sorted = [...trades].sort(
-    (a, b) => (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || '')
-  );
-  let cum = 0;
-  const eqLabels = [],
-    eqData = [];
-  sorted.forEach(t => {
-    cum += t.res || 0;
-    eqLabels.push((t.date || '').split('-').reverse().join('/'));
-    eqData.push(Math.round(cum * 100) / 100);
-  });
-  const byDay = {};
-  sorted.forEach(t => {
-    byDay[t.date] = (byDay[t.date] || 0) + (t.res || 0);
-  });
-  const dayLabels = Object.keys(byDay).sort();
-  const dayData = dayLabels.map(d => Math.round(byDay[d] * 100) / 100);
-  const dayLabelsFr = dayLabels.map(d => d.split('-').reverse().join('/'));
-
-  const mk = (w, h) => {
-    const c = document.createElement('canvas');
-    c.width = w;
-    c.height = h;
-    c.style.position = 'fixed';
-    c.style.left = '-9999px';
-    c.style.top = '-9999px';
-    document.body.appendChild(c);
-    return c;
-  };
-  const wait = () => new Promise(r => setTimeout(r, 80));
-  // Remplit tout le canvas avec le fond du thème AVANT que Chart.js ne dessine par-dessus
-  // (sans ça, les zones hors graphique resteraient transparentes -> blanc dans le PDF).
-  const bgPlugin = bgColor => ({
-    id: 'pmBg',
-    beforeDraw(chart) {
-      const {ctx, width, height} = chart;
-      ctx.save();
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
-    }
-  });
-
-  const eqCanvas = mk(900, 400);
-  const eqChart = new Chart(eqCanvas.getContext('2d'), {
-    type: 'line',
-    plugins: [bgPlugin(th.eqBg)],
-    data: {
-      labels: eqLabels,
-      datasets: [
-        {
-          data: eqData,
-          borderColor: th.eqLine,
-          backgroundColor: th.eqFillTop,
-          borderWidth: 2.5,
-          fill: true,
-          tension: 0,
-          pointRadius: 0
-        }
-      ]
-    },
-    options: {
-      responsive: false,
-      animation: false,
-      plugins: {
-        legend: {display: false},
-        title: {display: true, text: 'Évolution du capital (cumul du mois)', color: th.text, font: {size: 16}}
-      },
-      scales: {
-        x: {grid: {color: th.eqGrid}, ticks: {color: th.eqAxis}},
-        y: {
-          grid: {color: th.eqGrid},
-          ticks: {color: th.eqAxis, callback: v => v.toLocaleString('fr-FR') + '€'}
-        }
-      }
-    }
-  });
-  await wait();
-  const eqImg = eqCanvas.toDataURL('image/png');
-  eqChart.destroy();
-  eqCanvas.remove();
-
-  const pnlCanvas = mk(900, 400);
-  const pnlChart = new Chart(pnlCanvas.getContext('2d'), {
-    type: 'bar',
-    plugins: [bgPlugin(th.eqBg)],
-    data: {
-      labels: dayLabelsFr,
-      datasets: [{data: dayData, backgroundColor: dayData.map(v => (v >= 0 ? th.pnlPos : th.pnlNeg))}]
-    },
-    options: {
-      responsive: false,
-      animation: false,
-      plugins: {
-        legend: {display: false},
-        title: {display: true, text: 'P&L par jour', color: th.text, font: {size: 16}}
-      },
-      scales: {
-        x: {grid: {color: th.eqGrid}, ticks: {color: th.pnlAxis, maxRotation: 60}},
-        y: {
-          grid: {color: th.eqGrid},
-          ticks: {color: th.pnlAxis, callback: v => v.toLocaleString('fr-FR') + '€'}
-        }
-      }
-    }
-  });
-  await wait();
-  const pnlImg = pnlCanvas.toDataURL('image/png');
-  pnlChart.destroy();
-  pnlCanvas.remove();
-
-  return {eqImg, pnlImg};
-}
-
-// ── Records personnels (calculés sur TOUT l'historique, trades réels uniquement) ──
-// Permet de signaler dans le PDF si un record a été battu CE mois-ci.
-function pmComputeRecords(allRealTrades, monthTrades) {
-  const r = {
-    bestTrade: null,
-    worstTrade: null,
-    bestDay: null,
-    bestMonth: null,
-    bestWinStreak: 0,
-    mostTradesInDay: 0,
-    bestTradeThisMonth: null
-  };
-  if (!allRealTrades.length) return r;
-  // Meilleur / pire trade unique
-  allRealTrades.forEach(t => {
-    if (typeof t.res !== 'number') return;
-    if (!r.bestTrade || t.res > r.bestTrade.res) r.bestTrade = t;
-    if (!r.worstTrade || t.res < r.worstTrade.res) r.worstTrade = t;
-  });
-  // Meilleur trade DU MOIS analysé (sert pour la carte KPI "Meilleur trade")
-  monthTrades.forEach(t => {
-    if (typeof t.res !== 'number') return;
-    if (!r.bestTradeThisMonth || t.res > r.bestTradeThisMonth.res) r.bestTradeThisMonth = t;
-  });
-  // Meilleur jour (somme P&L par date)
-  const byDay = {};
-  allRealTrades.forEach(t => {
-    if (!t.date) return;
-    byDay[t.date] = (byDay[t.date] || 0) + (t.res || 0);
-    r.mostTradesInDay = Math.max(r.mostTradesInDay, (byDay[t.date + '__n'] = (byDay[t.date + '__n'] || 0) + 1));
-  });
-  Object.keys(byDay).forEach(k => {
-    if (k.endsWith('__n')) return;
-    if (!r.bestDay || byDay[k] > r.bestDay.pnl) r.bestDay = {date: k, pnl: byDay[k]};
-  });
-  // Meilleur mois (somme P&L par mois calendaire)
-  const byMonth = {};
-  allRealTrades.forEach(t => {
-    if (!t.date) return;
-    const key = t.date.slice(0, 7); // YYYY-MM
-    byMonth[key] = (byMonth[key] || 0) + (t.res || 0);
-  });
-  Object.keys(byMonth).forEach(k => {
-    if (!r.bestMonth || byMonth[k] > r.bestMonth.pnl) r.bestMonth = {month: k, pnl: byMonth[k]};
-  });
-  // Plus longue série de trades gagnants (trades triés par date/heure)
-  const sorted = [...allRealTrades].sort(
-    (a, b) => (a.date || '').localeCompare(b.date || '') || (a.heure || '').localeCompare(b.heure || '')
-  );
-  let streak = 0;
-  sorted.forEach(t => {
-    if ((t.res || 0) > 0) {
-      streak++;
-      r.bestWinStreak = Math.max(r.bestWinStreak, streak);
-    } else {
-      streak = 0;
-    }
-  });
-  return r;
+// Rythme de trading sur le mois (nb de trades/semaine en moyenne) — sert à détailler
+// la page Calendrier et le prompt IA, en plus de la vraie capture (qui a déjà ses
+// propres stats intégrées par l'app).
+function pmWeeklyBreakdown(trades, first, last) {
+  const msPerDay = 86400000;
+  const totalDays = Math.round((last - first) / msPerDay) + 1;
+  const weeks = totalDays / 7;
+  const avgPerWeek = weeks > 0 ? trades.length / weeks : trades.length;
+  return {avgPerWeek: Math.round(avgPerWeek * 10) / 10, weeksSpan: Math.round(weeks * 10) / 10};
 }
 
 // Construit le prompt envoyé à l'IA (pcAskAI) : toutes les données nécessaires sont
-// intégrées DIRECTEMENT dans le texte de la question (chiffres déjà calculés côté client,
-// jamais recalculés par l'IA), pour ne jamais dépendre d'un éventuel filtrage par dates
-// fait par l'IA elle-même via ses outils.
-function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, records) {
+// intégrées DIRECTEMENT dans le texte de la question (chiffres déjà calculés côté
+// client, jamais recalculés par l'IA), pour ne jamais dépendre d'un éventuel filtrage
+// par dates fait par l'IA elle-même via ses outils.
+function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, weekly, wl) {
   const fmt = t => ({
     id: t.id,
     date: t.date,
@@ -4875,7 +4733,13 @@ function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, 
       winratePct: Math.round(curStats.winrate * 10) / 10,
       pnlEur: Math.round(curStats.pnl * 100) / 100,
       profitFactor: isFinite(curStats.pf) ? Math.round(curStats.pf * 100) / 100 : '∞',
-      rrMoyen: Math.round(curStats.avgRR * 100) / 100
+      rrMoyen: Math.round(curStats.avgRR * 100) / 100,
+      moyenneTradesParSemaine: weekly.avgPerWeek,
+      nombreDeSemaines: weekly.weeksSpan,
+      gainMoyenEur: Math.round(wl.avgWin * 100) / 100,
+      perteMoyenneEur: Math.round(wl.avgLoss * 100) / 100,
+      plusGrosGainEur: Math.round(wl.biggestWin * 100) / 100,
+      plusGrossePerteEur: Math.round(wl.biggestLoss * 100) / 100
     },
     statsMoisPrecedent: {
       nbTrades: prevStats.n,
@@ -4884,20 +4748,16 @@ function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, 
       profitFactor: isFinite(prevStats.pf) ? Math.round(prevStats.pf * 100) / 100 : '∞',
       rrMoyen: Math.round(prevStats.avgRR * 100) / 100
     },
-    recordsPersonnels: {
-      meilleurTradeEur: records.bestTrade ? Math.round(records.bestTrade.res * 100) / 100 : null,
-      pireTradeEur: records.worstTrade ? Math.round(records.worstTrade.res * 100) / 100 : null,
-      meilleureSerieGagnante: records.bestWinStreak
-    },
     tradesDuMoisAnalyse: monthTrades.map(fmt)
   };
 
-  return `Tu dois rédiger un RÉCAP MENSUEL complet, détaillé et de niveau institutionnel du trading de l'utilisateur pour la période "${monthLabel}", à comparer au mois précédent "${prevLabel}". Utilise UNIQUEMENT les chiffres fournis ci-dessous (ne recalcule rien, ne va chercher aucune autre donnée via tes outils) :
+  return `Tu dois rédiger un RÉCAP MENSUEL complet, très détaillé et de niveau institutionnel du trading de l'utilisateur pour la période "${monthLabel}", à comparer au mois précédent "${prevLabel}". Utilise UNIQUEMENT les chiffres fournis ci-dessous (ne recalcule rien, ne va chercher aucune autre donnée via tes outils) :
 
 ${JSON.stringify(data)}
 
-Règles impératives :
-- Quand tu mentionnes le winrate ou le RR moyen (dans l'intro, l'évolution ou la conclusion), CITE TOUJOURS le chiffre exact fourni ci-dessus (ex : "un winrate de 62.5%"), jamais une formulation vague comme "un bon winrate".
+Règles impératives, pour CHAQUE section demandée ci-dessous :
+- Écris plusieurs phrases développées, jamais une simple liste de chiffres ou une phrase unique : explique, contextualise, commente.
+- Quand tu mentionnes le winrate ou le RR moyen, CITE TOUJOURS le chiffre exact fourni ci-dessus (ex : "un winrate de 62.5%"), jamais une formulation vague comme "un bon winrate".
 - Pour CHAQUE trade de "tradesDuMoisAnalyse", juge s'il s'agit d'un bon ou mauvais trade EN TE BASANT SUR LE CHAMP "notes" (le raisonnement, le respect du plan, les émotions décrites par l'utilisateur) et pas seulement sur le résultat en euros : une perte peut être une "bonne perte" (plan respecté, erreur de marché normale) et un gain peut être un "mauvais gain" (plan non respecté, coup de chance). Si "notes" est vide ou trop pauvre pour juger, dis-le honnêtement plutôt que d'inventer.
 - Pour CHAQUE point fort et CHAQUE axe de travail, n'écris jamais une simple étiquette : explique EN DÉTAIL pourquoi c'est un point fort (ou comment l'améliorer), ou pourquoi c'est une erreur récurrente et ce qu'il faudrait changer concrètement — 2 à 4 phrases par point, pas juste un mot-clé.
 - La comparaison avec le mois précédent doit être rédigée (plusieurs phrases argumentées), pas une simple liste de chiffres côte à côte.
@@ -4905,8 +4765,17 @@ Règles impératives :
 Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte brut uniquement, rien avant ni après les balises :
 
 ###INTRO###
-(un paragraphe d'introduction du mois : contexte, ambiance générale, en citant le winrate et le RR moyen exacts)
+(introduction détaillée du mois en plusieurs paragraphes : contexte, ambiance générale, rythme de trading, en citant le winrate et le RR moyen exacts)
 ###FIN_INTRO###
+###CAPITAL###
+(analyse détaillée de l'évolution du capital et du P&L quotidien sur le mois : phases de hausse/baisse, régularité ou non des gains, ce que ça révèle de la gestion du risque — plusieurs phrases)
+###FIN_CAPITAL###
+###CALENDRIER###
+(analyse détaillée du rythme de trading : fréquence (moyenneTradesParSemaine), régularité dans le mois, et ce que ça suggère — plusieurs phrases)
+###FIN_CALENDRIER###
+###WINRATE###
+(analyse détaillée de la qualité des gains/pertes : compare gainMoyenEur à perteMoyenneEur, commente le ratio, et ce que ça dit du money management — plusieurs phrases)
+###FIN_WINRATE###
 ###TRADES###
 (une ligne par trade de tradesDuMoisAnalyse, format EXACT : id|verdict court (2 à 4 mots)|explication en 1 à 2 phrases courtes)
 ###FIN_TRADES###
@@ -4917,10 +4786,10 @@ Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte 
 (3 à 5 axes de travail ou erreurs répétées du mois, un point par ligne commençant par "- ", chacun expliqué en détail comme demandé ci-dessus)
 ###FIN_AXES###
 ###EVOLUTION###
-(comparaison rédigée, argumentée et chiffrée avec le mois précédent : ce qui s'est amélioré, ce qui s'est dégradé, et pourquoi)
+(comparaison rédigée, argumentée et chiffrée avec le mois précédent : ce qui s'est amélioré, ce qui s'est dégradé, et pourquoi — plusieurs phrases)
 ###FIN_EVOLUTION###
 ###CONCLUSION###
-(conclusion motivante et concrète, 3 à 5 phrases, avec un conseil actionnable pour le mois prochain)
+(conclusion motivante et concrète, 4 à 6 phrases, avec un conseil actionnable pour le mois prochain)
 ###FIN_CONCLUSION###`;
 }
 function pmParseSection(answer, tag) {
@@ -4929,10 +4798,10 @@ function pmParseSection(answer, tag) {
 }
 
 // Assemble le PDF final avec jsPDF (chargé en CDN, voir index.html). Structure fixe,
-// identique chaque mois, UNE PAGE = UN SUJET : page de garde, introduction, courbe de
-// capital, P&L quotidien, calendrier (capture réelle), win rate (graphique réel +
-// capture), KPI du mois (capture réelle), analyse trade par trade, points forts, axes
-// de travail, records personnels, comparaison amis (si dispo), évolution, conclusion.
+// identique chaque mois, UNE PAGE = UN SUJET, avec de vraies captures d'écran (pas de
+// recréation) : page de garde, introduction, évolution du capital + P&L (même page),
+// calendrier réel, win rate réel, KPI réels (vue d'ensemble), analyse trade par trade
+// (vraies fiches techniques), points forts, axes de travail, évolution, conclusion.
 function pmBuildPDF(o) {
   const th = o.theme;
   const bgRgb = pmRgb(th.bg, '#0b0f1a');
@@ -4941,8 +4810,6 @@ function pmBuildPDF(o) {
   const titleRgb = pmRgb(th.titleColor, '#00e5a0');
   const greenRgb = pmRgb(th.green, '#00e5a0');
   const redRgb = pmRgb(th.red, '#ef4444');
-  const cardRgb = pmRgb(th.card, '#161d2e');
-  const borderRgb = pmRgb(th.border, '#1e2d45');
 
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit: 'pt', format: 'a4'});
@@ -4951,8 +4818,6 @@ function pmBuildPDF(o) {
   const margin = 40;
   let y = margin;
 
-  // Chaque page du PDF reprend le fond du thème actuel (--bg) — jamais de fond blanc
-  // par défaut, pour que le rendu ressemble vraiment à l'app, thème sombre ou clair.
   const fillPageBg = () => {
     doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
     doc.rect(0, 0, pageW, pageH, 'F');
@@ -4973,6 +4838,14 @@ function pmBuildPDF(o) {
     doc.text(text, margin, y);
     y += size * 1.1;
   };
+  const addSubtitle = text => {
+    ensureSpace(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(mutedRgb[0], mutedRgb[1], mutedRgb[2]);
+    doc.text(text, margin, y);
+    y += 18;
+  };
   const addText = (text, size = 10.5) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(size);
@@ -4985,50 +4858,21 @@ function pmBuildPDF(o) {
     });
     y += 8;
   };
-  // Image proportionnelle, centrée en largeur de page, avec nouvelle page si besoin.
+  // Image proportionnelle (préserve le ratio réel de la capture), centrée, nouvelle
+  // page si besoin.
   const addImageFit = (dataUrl, w, h, maxH) => {
     const fitW = pageW - margin * 2;
-    let fitH = (fitW * h) / w;
-    if (maxH && fitH > maxH) fitH = maxH;
-    const fitW2 = maxH && (fitW * h) / w > maxH ? (maxH * w) / h : fitW;
+    const natFitH = (fitW * h) / w;
+    let fitW2 = fitW,
+      fitH = natFitH;
+    if (maxH && natFitH > maxH) {
+      fitH = maxH;
+      fitW2 = (maxH * w) / h;
+    }
     const x = margin + (fitW - fitW2) / 2;
     ensureSpace(fitH + 10);
     doc.addImage(dataUrl, 'PNG', x, y, fitW2, fitH);
     y += fitH + 16;
-  };
-  // Une « fiche » par trade : carte à fond/bordure du thème, verdict + explication.
-  const addTradeCard = (head, pnlStr, pos, verdict, explication) => {
-    const bodyLines = doc.splitTextToSize(explication || '—', pageW - margin * 2 - 20);
-    const verdictLines = doc.splitTextToSize('Verdict : ' + (verdict || '—'), pageW - margin * 2 - 20);
-    const lineH = 12.5;
-    const innerH = 22 + verdictLines.length * lineH + bodyLines.length * lineH + 10;
-    ensureSpace(innerH + 10);
-    const boxY = y;
-    doc.setDrawColor(borderRgb[0], borderRgb[1], borderRgb[2]);
-    doc.setFillColor(cardRgb[0], cardRgb[1], cardRgb[2]);
-    doc.roundedRect(margin, boxY, pageW - margin * 2, innerH, 4, 4, 'FD');
-    let iy = boxY + 18;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10.5);
-    doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
-    doc.text(head, margin + 10, iy);
-    const pr = pos ? greenRgb : redRgb;
-    doc.setTextColor(pr[0], pr[1], pr[2]);
-    doc.text(pnlStr, pageW - margin - 10, iy, {align: 'right'});
-    iy += lineH + 3;
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(titleRgb[0], titleRgb[1], titleRgb[2]);
-    verdictLines.forEach(l => {
-      doc.text(l, margin + 10, iy);
-      iy += lineH;
-    });
-    doc.setTextColor(mutedRgb[0], mutedRgb[1], mutedRgb[2]);
-    bodyLines.forEach(l => {
-      doc.text(l, margin + 10, iy);
-      iy += lineH;
-    });
-    y = boxY + innerH + 10;
   };
 
   // ── Page de garde ──
@@ -5059,36 +4903,61 @@ function pmBuildPDF(o) {
     11
   );
 
-  // ── Évolution du capital ──
+  // ── Évolution du capital + P&L (même page, vraies captures des vrais graphiques) ──
   addPage();
-  addTitle('Évolution du capital');
-  addImageFit(o.eqImg, 900, 400);
+  addTitle('Évolution du capital & P&L quotidien');
+  addText(o.capitalTxt);
+  addSubtitle('Évolution du capital (capture réelle)');
+  addImageFit(o.charts.eq.dataUrl, o.charts.eq.w, o.charts.eq.h, 260);
+  addSubtitle('P&L quotidien (capture réelle)');
+  addImageFit(o.charts.pnl.dataUrl, o.charts.pnl.w, o.charts.pnl.h, 260);
 
-  // ── P&L quotidien ──
-  addPage();
-  addTitle('P&L quotidien');
-  addImageFit(o.pnlImg, 900, 400);
-
-  // ── Calendrier (capture réelle) ──
+  // ── Calendrier (vraie capture de la vraie page Calendrier) ──
   addPage();
   addTitle('Calendrier du mois');
   addImageFit(o.calImg.dataUrl, o.calImg.w, o.calImg.h, 620);
+  addText(o.calendrierTxt);
 
-  // ── Win Rate ──
+  // ── Win Rate (vraie capture du vrai graphique) ──
   addPage();
   addTitle('Win Rate');
-  addImageFit(o.winrate.dataUrl, 700, 700, 320);
-  addText(`${o.winrate.g} trade(s) gagnant(s) • ${o.winrate.p} trade(s) perdant(s) • ${o.winrate.n} nul(s) — soit un winrate de ${o.curStats.winrate.toFixed(1)}%.`, 11);
+  addImageFit(o.charts.pie.dataUrl, o.charts.pie.w, o.charts.pie.h, 280);
+  const fr2 = n => (n || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  addText(
+    `Gain moyen : +${fr2(o.wl.avgWin)}€ (plus gros : +${fr2(o.wl.biggestWin)}€)  •  Perte moyenne : ${fr2(o.wl.avgLoss)}€ (plus grosse : ${fr2(o.wl.biggestLoss)}€)`,
+    11
+  );
+  addText(o.winrateTxt);
 
-  // ── KPI du mois (capture réelle) ──
+  // ── KPI — vue d'ensemble (vraie capture du vrai bandeau, avec tes modifications) ──
   addPage();
-  addTitle('KPI du mois');
+  addTitle('KPI — Vue d’ensemble');
+  addText("Capture réelle de ton bandeau KPI actuel (avec tes icônes, couleurs et modifications personnelles) — ce sont des compteurs globaux de ton compte, pas filtrés sur le mois.", 10);
   addImageFit(o.kpiImg.dataUrl, o.kpiImg.w, o.kpiImg.h, 260);
 
-  // ── Analyse trade par trade ──
+  // ── Analyse trade par trade (vraies fiches techniques, comme dans le chat) ──
   addPage();
   addTitle('Analyse trade par trade');
-  o.tradeCards.forEach(c => addTradeCard(c.head, c.pnlStr, c.pos, c.verdict, c.explication));
+  o.tradeEntries.forEach(te => {
+    if (te.img) {
+      ensureSpace(60);
+      const fitW2 = 230;
+      const fitH = (fitW2 * te.img.h) / te.img.w;
+      ensureSpace(fitH + 10);
+      doc.addImage(te.img.dataUrl, 'PNG', margin, y, fitW2, fitH);
+      y += fitH + 8;
+    } else {
+      addText(te.head, 10.5);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(titleRgb[0], titleRgb[1], titleRgb[2]);
+    ensureSpace(14);
+    doc.text('Verdict : ' + (te.verdict || '—'), margin, y);
+    y += 14;
+    addText(te.explication, 9.5);
+    y += 10;
+  });
 
   // ── Points forts ──
   addPage();
@@ -5099,44 +4968,6 @@ function pmBuildPDF(o) {
   addPage();
   addTitle('Axes de travail');
   addText(o.axes);
-
-  // ── Records personnels ──
-  addPage();
-  addTitle('Records personnels');
-  const R = o.records;
-  const fr2 = n => (n || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
-  if (R.bestTrade) {
-    const broke = o.monthTradeIds.has(R.bestTrade.id);
-    addText(
-      `🏆 Meilleur trade : ${R.bestTrade.res >= 0 ? '+' : ''}${fr2(R.bestTrade.res)}€ le ${(R.bestTrade.date || '').split('-').reverse().join('/')}` +
-        (broke ? '  — record battu ce mois-ci !' : ''),
-      11
-    );
-  }
-  if (R.worstTrade) {
-    addText(`📉 Pire trade : ${fr2(R.worstTrade.res)}€ le ${(R.worstTrade.date || '').split('-').reverse().join('/')}`, 11);
-  }
-  if (R.bestDay) {
-    const broke = R.bestDay.date >= o.monthFirstYmd && R.bestDay.date <= o.monthLastYmd;
-    addText(
-      `📅 Meilleure journée : ${R.bestDay.pnl >= 0 ? '+' : ''}${fr2(R.bestDay.pnl)}€ le ${R.bestDay.date.split('-').reverse().join('/')}` +
-        (broke ? '  — record battu ce mois-ci !' : ''),
-      11
-    );
-  }
-  if (R.bestMonth) {
-    const broke = R.bestMonth.month === o.monthKey;
-    addText(
-      `🗓️ Meilleur mois historique : ${R.bestMonth.pnl >= 0 ? '+' : ''}${fr2(R.bestMonth.pnl)}€` + (broke ? '  — c\'est CE mois-ci !' : ''),
-      11
-    );
-  }
-  if (R.bestWinStreak) {
-    addText(`🔥 Meilleure série de trades gagnants d'affilée : ${R.bestWinStreak}`, 11);
-  }
-  if (R.mostTradesInDay) {
-    addText(`⚡ Le plus de trades en une seule journée : ${R.mostTradesInDay}`, 11);
-  }
 
   // ── Évolution vs mois précédent ──
   addPage();
@@ -5186,24 +5017,40 @@ async function generateMonthlyReport() {
 
     const curStats = pmStats(monthTrades);
     const prevStats = pmStats(prevTrades);
-    const records = pmComputeRecords(allReal, monthTrades);
-
-    statusEl.textContent = 'Génération des graphiques...';
+    const weekly = pmWeeklyBreakdown(monthTrades, cur.first, cur.last);
+    const wl = pmWinLossBreakdown(monthTrades);
     const theme = pmTheme();
-    const {eqImg, pnlImg} = await pmBuildChartsImages(monthTrades, theme);
-    const winrate = await pmBuildWinrateChart(monthTrades, theme);
+
+    statusEl.textContent = 'Capture des graphiques réels du mois...';
+    const charts = await pmCaptureTrackRecordCharts(cur);
 
     statusEl.textContent = 'Capture du calendrier réel...';
     const calImg = await pmCaptureCalendarReal(cur.year, cur.month);
 
-    statusEl.textContent = 'Capture des KPI du mois...';
-    const kpiImg = await pmCaptureKpiReal(curStats, records, theme);
+    statusEl.textContent = 'Capture de tes KPI réels...';
+    const kpiImg = await pmCaptureKpiStripReal();
+
+    statusEl.textContent = `Capture des fiches de trade (0/${monthTrades.length})...`;
+    const tradeImgs = {};
+    for (let i = 0; i < monthTrades.length; i++) {
+      const t = monthTrades[i];
+      try {
+        tradeImgs[t.id] = await pmCaptureTradeCard(t);
+      } catch (e) {
+        console.warn('Capture de fiche de trade échouée pour le trade', t.id, e);
+        tradeImgs[t.id] = null;
+      }
+      statusEl.textContent = `Capture des fiches de trade (${i + 1}/${monthTrades.length})...`;
+    }
 
     statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
-    const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, records);
+    const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, weekly, wl);
     const {answer} = await pcAskAI(prompt, APP.trades || [], []);
 
     const intro = pmParseSection(answer, 'INTRO') || answer;
+    const capitalTxt = pmParseSection(answer, 'CAPITAL');
+    const calendrierTxt = pmParseSection(answer, 'CALENDRIER');
+    const winrateTxt = pmParseSection(answer, 'WINRATE');
     const tradesRaw = pmParseSection(answer, 'TRADES');
     const forces = pmParseSection(answer, 'FORCES');
     const axes = pmParseSection(answer, 'AXES');
@@ -5214,7 +5061,7 @@ async function generateMonthlyReport() {
     monthTrades.forEach(t => {
       byId[t.id] = t;
     });
-    const tradeCards = tradesRaw
+    const tradeEntries = tradesRaw
       .split('\n')
       .map(l => l.trim())
       .filter(Boolean)
@@ -5227,32 +5074,27 @@ async function generateMonthlyReport() {
         const head = t
           ? `${(t.date || '').split('-').reverse().join('/')} — ${t.paire || '?'} ${t.dir || ''}`
           : 'Trade #' + (isNaN(id) ? '?' : id);
-        const res = t && typeof t.res === 'number' ? t.res : null;
-        const pnlStr = res === null ? '?' : (res >= 0 ? '+' : '') + res.toFixed(2) + '€';
-        return {head, pnlStr, pos: res === null || res >= 0, verdict, explication};
+        return {head, verdict, explication, img: tradeImgs[id] || null};
       });
 
     const doc = pmBuildPDF({
       monthLabel: cur.label,
       intro,
+      capitalTxt,
+      calendrierTxt,
+      winrateTxt,
       forces,
       axes,
       evolution,
       conclusion,
-      tradeCards,
+      tradeEntries,
       curStats,
       prevStats,
-      records,
-      eqImg,
-      pnlImg,
-      winrate,
+      wl,
+      charts,
       calImg,
       kpiImg,
-      theme,
-      monthKey: cur.year + '-' + String(cur.month + 1).padStart(2, '0'),
-      monthFirstYmd: pmYMD(cur.first),
-      monthLastYmd: pmYMD(cur.last),
-      monthTradeIds: new Set(monthTrades.map(t => t.id))
+      theme
     });
 
     const filename = `Récap mensuel - ${cur.label}.pdf`;
@@ -5264,6 +5106,13 @@ async function generateMonthlyReport() {
     console.error('Génération du récap mensuel échouée :', e);
     statusEl.textContent = 'Erreur : ' + (e && e.message ? e.message : 'génération impossible.');
     statusEl.style.color = 'var(--red)';
+    // Filet de sécurité : si l'erreur survient après qu'on ait rendu une page hors-écran
+    // visible (ex: PM_NOW_OVERRIDE resté actif), on remet tout en ordre pour ne jamais
+    // laisser l'app dans un état altéré.
+    try {
+      PM_NOW_OVERRIDE = null;
+      if (typeof refreshAllCharts === 'function') refreshAllCharts();
+    } catch (e2) {}
   } finally {
     btn.disabled = false;
     btn.textContent = prevLabelBtn;

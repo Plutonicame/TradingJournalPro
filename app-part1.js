@@ -3585,8 +3585,14 @@ const ST = {
 };
 const MODE = {conf: false, pairs: false, sessions: false, jours: false, tf: false, dur: false};
 
+// Dérogation utilisée UNIQUEMENT par le Récap mensuel (app-part2.js) : le temps
+// d'une capture d'écran réelle d'un mois passé complet, permet à filterT('mois')
+// de cibler ce mois-là au lieu du mois en cours — toujours remise à null juste
+// après, jamais persistée. Ne change rien tant qu'elle vaut null (comportement
+// 100% inchangé pour toute l'app).
+let PM_NOW_OVERRIDE = null;
 function filterT(period) {
-  const now = new Date(),
+  const now = PM_NOW_OVERRIDE || new Date(),
     y = now.getFullYear(),
     m = now.getMonth(),
     q = Math.floor(m / 3);
