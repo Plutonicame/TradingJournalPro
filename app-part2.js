@@ -4646,8 +4646,9 @@ async function pmCaptureCalendarReal(year, month) {
 // Fiche technique RÉELLE d'un trade : EXACTEMENT la même que celle envoyée dans le
 // chat avec les amis (fcBuildTradeCardHtml, voir friends-chat.js) — mêmes champs,
 // mêmes classes CSS, mêmes images — capturée hors-écran pour le PDF.
-function pmBuildTradeCardPayload(t) {
+function pmBuildTradeCardPayload(t, opts) {
   const capInfo = typeof fcCapBeforeAfterPct === 'function' ? fcCapBeforeAfterPct(t) : null;
+  const noImages = opts && opts.noImages;
   return {
     id: t.id,
     date: t.date || '',
@@ -4672,16 +4673,43 @@ function pmBuildTradeCardPayload(t) {
     conf: t.conf || '',
     backtest: !!t.backtest,
     customFields: typeof fcCollectCustomFields === 'function' ? fcCollectCustomFields(t) : [],
-    images: Array.isArray(t.images) ? t.images.slice(0, 6) : []
+    images: noImages ? [] : Array.isArray(t.images) ? t.images.slice(0, 6) : []
   };
 }
+// Fiche LARGE pour le PDF : même fonction/mêmes classes que la fiche envoyée dans le
+// chat (fcBuildTradeCardHtml), mais sans les images (affichées séparément, plus grandes,
+// juste en dessous — voir pmCaptureTradeImages) et forcée en pleine largeur de page
+// (au lieu des 330px fixes du chat, trop étroit pour tout voir sans que ça wrap).
 async function pmCaptureTradeCard(t) {
   if (typeof fcBuildTradeCardHtml !== 'function') return null;
-  const payload = pmBuildTradeCardPayload(t);
+  const payload = pmBuildTradeCardPayload(t, {noImages: true});
   return pmSnapshot(host => {
-    host.className = 'fc-trade-card';
     host.innerHTML = fcBuildTradeCardHtml(payload);
-  }, 330);
+    const cardEl = host.firstElementChild;
+    if (cardEl) {
+      cardEl.style.width = '980px';
+      cardEl.style.boxSizing = 'border-box';
+    }
+  }, 980);
+}
+// Galerie des vraies images du trade (pas les miniatures 44×34 de la fiche chat),
+// affichées plus grandes juste sous la fiche, avec une légende rappelant de quel
+// trade il s'agit (utile si la page se termine entre les deux).
+async function pmCaptureTradeImages(t) {
+  const imgs = Array.isArray(t.images) ? t.images.slice(0, 6) : [];
+  if (!imgs.length) return null;
+  const dateStr = (t.date || '').split('-').reverse().join('/');
+  const caption = `${dateStr} — ${t.paire || '?'} ${t.dir || ''}`.trim();
+  return pmSnapshot(host => {
+    host.innerHTML =
+      `<div style="font:700 13px Arial,sans-serif;color:var(--text);margin-bottom:8px;">${caption} — graphique(s)</div>` +
+      `<div style="display:flex;gap:10px;flex-wrap:wrap;">${imgs
+        .map(
+          src =>
+            `<img src="${src}" style="width:290px;height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`
+        )
+        .join('')}</div>`;
+  }, 980);
 }
 
 // ── Stats complémentaires calculées côté client (jamais par l'IA) ──────────────
@@ -4706,22 +4734,48 @@ function pmWeeklyBreakdown(trades, first, last) {
   const avgPerWeek = weeks > 0 ? trades.length / weeks : trades.length;
   return {avgPerWeek: Math.round(avgPerWeek * 10) / 10, weeksSpan: Math.round(weeks * 10) / 10};
 }
+// Payouts tombés PENDANT le mois analysé (lsAcc('tj_payouts', [])) — utilisé pour ne
+// commenter le KPI Payout que si quelque chose s'est réellement passé ce mois-ci.
+function pmPayoutsInMonth(firstYmd, lastYmd) {
+  const all = typeof lsAcc === 'function' ? lsAcc('tj_payouts', []) : [];
+  const inMonth = all.filter(p => p.date >= firstYmd && p.date <= lastYmd);
+  return {list: inMonth, total: inMonth.reduce((s, p) => s + (p.amount || 0), 0)};
+}
+// Filet de sécurité : l'IA peut parfois laisser passer une balise HTML (ex :
+// "<strong>0.00</strong>") malgré la consigne de texte brut — on la retire avant
+// tout affichage dans le PDF, jamais affichée telle quelle.
+function pmStripHtml(s) {
+  return String(s || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+}
 
 // Construit le prompt envoyé à l'IA (pcAskAI) : toutes les données nécessaires sont
 // intégrées DIRECTEMENT dans le texte de la question (chiffres déjà calculés côté
 // client, jamais recalculés par l'IA), pour ne jamais dépendre d'un éventuel filtrage
 // par dates fait par l'IA elle-même via ses outils.
-function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, weekly, wl) {
+function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, weekly, wl, payouts) {
   const fmt = t => ({
     id: t.id,
     date: t.date,
     heure: t.heure,
+    dateFin: t.dateFin || null,
+    heureFin: t.heureFin || null,
+    session: t.session || null,
     paire: t.paire,
     direction: t.dir,
     resultatEur: typeof t.res === 'number' ? t.res : null,
+    risqueEur: t.risqueEur || null,
     rrCible: t.rrCible || null,
     rrReel: typeof computeRR === 'function' ? computeRR(t) : null,
     management: t.mgmt || null,
+    reprise: t.reprend || null,
+    timeframes: t.tf || null,
+    confluences: t.conf || null,
     notes: t.notes ? String(t.notes) : null,
     stars: t.stars || null
   });
@@ -4748,6 +4802,7 @@ function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, 
       profitFactor: isFinite(prevStats.pf) ? Math.round(prevStats.pf * 100) / 100 : '∞',
       rrMoyen: Math.round(prevStats.avgRR * 100) / 100
     },
+    payoutsDuMois: payouts.total ? {totalEur: Math.round(payouts.total * 100) / 100, nombre: payouts.list.length} : null,
     tradesDuMoisAnalyse: monthTrades.map(fmt)
   };
 
@@ -4756,11 +4811,13 @@ function pmBuildPrompt(monthLabel, prevLabel, monthTrades, curStats, prevStats, 
 ${JSON.stringify(data)}
 
 Règles impératives, pour CHAQUE section demandée ci-dessous :
+- Texte brut UNIQUEMENT. N'écris JAMAIS une balise HTML (pas de <strong>, <b>, <i>, <br>, etc.) ni de markdown (pas de **gras**). Si tu veux insister sur un chiffre, écris-le simplement en texte normal.
 - Écris plusieurs phrases développées, jamais une simple liste de chiffres ou une phrase unique : explique, contextualise, commente.
 - Quand tu mentionnes le winrate ou le RR moyen, CITE TOUJOURS le chiffre exact fourni ci-dessus (ex : "un winrate de 62.5%"), jamais une formulation vague comme "un bon winrate".
-- Pour CHAQUE trade de "tradesDuMoisAnalyse", juge s'il s'agit d'un bon ou mauvais trade EN TE BASANT SUR LE CHAMP "notes" (le raisonnement, le respect du plan, les émotions décrites par l'utilisateur) et pas seulement sur le résultat en euros : une perte peut être une "bonne perte" (plan respecté, erreur de marché normale) et un gain peut être un "mauvais gain" (plan non respecté, coup de chance). Si "notes" est vide ou trop pauvre pour juger, dis-le honnêtement plutôt que d'inventer.
+- Pour CHAQUE trade de "tradesDuMoisAnalyse", fais une VRAIE analyse technique poussée, pas juste une conclusion de 1 phrase basée sur "notes" : commente la paire et la direction, le risque pris (risqueEur) par rapport au RR visé (rrCible) et au RR réellement pris (rrReel), la session et les timeframes/confluences utilisés si renseignés, la gestion (management/reprise) si renseignée, ET juge si c'est un bon ou mauvais trade EN TE BASANT D'ABORD sur le champ "notes" (le raisonnement, le respect du plan, les émotions décrites) et pas seulement sur le résultat en euros : une perte peut être une "bonne perte" (plan respecté) et un gain peut être un "mauvais gain" (plan non respecté, coup de chance). Si "notes" est vide, analyse quand même les données techniques disponibles (RR, risque, session...) et dis honnêtement que les notes manquent pour juger le raisonnement.
 - Pour CHAQUE point fort et CHAQUE axe de travail, n'écris jamais une simple étiquette : explique EN DÉTAIL pourquoi c'est un point fort (ou comment l'améliorer), ou pourquoi c'est une erreur récurrente et ce qu'il faudrait changer concrètement — 2 à 4 phrases par point, pas juste un mot-clé.
 - La comparaison avec le mois précédent doit être rédigée (plusieurs phrases argumentées), pas une simple liste de chiffres côte à côte.
+- Pour les sections KPI_*, analyse CE SEUL indicateur en profondeur (pas les autres), toujours en le comparant au chiffre du mois précédent fourni dans "statsMoisPrecedent".
 
 Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte brut uniquement, rien avant ni après les balises :
 
@@ -4776,8 +4833,27 @@ Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte 
 ###WINRATE###
 (analyse détaillée de la qualité des gains/pertes : compare gainMoyenEur à perteMoyenneEur, commente le ratio, et ce que ça dit du money management — plusieurs phrases)
 ###FIN_WINRATE###
-###TRADES###
-(une ligne par trade de tradesDuMoisAnalyse, format EXACT : id|verdict court (2 à 4 mots)|explication en 1 à 2 phrases courtes)
+###KPI_PNL###
+(analyse détaillée du P&L du mois comparé au mois précédent — plusieurs phrases)
+###FIN_KPI_PNL###
+###KPI_WINRATE###
+(analyse détaillée du winrate du mois comparé au mois précédent — plusieurs phrases)
+###FIN_KPI_WINRATE###
+###KPI_RR###
+(analyse détaillée du RR moyen du mois comparé au mois précédent — plusieurs phrases)
+###FIN_KPI_RR###
+###KPI_PF###
+(analyse détaillée du profit factor du mois comparé au mois précédent — plusieurs phrases)
+###FIN_KPI_PF###
+###KPI_TRADES###
+(analyse détaillée du nombre de trades du mois comparé au mois précédent (sur-trading ou sous-trading ?) — plusieurs phrases)
+###FIN_KPI_TRADES###
+${
+  payouts.total
+    ? `###KPI_PAYOUT###\n(analyse du/des payout(s) du mois : montant total ${Math.round(payouts.total * 100) / 100}€, ce que ça représente par rapport au P&L du mois — plusieurs phrases)\n###FIN_KPI_PAYOUT###\n`
+    : ''
+}###TRADES###
+(une ligne par trade de tradesDuMoisAnalyse, format EXACT : id|verdict court (2 à 4 mots)|analyse détaillée en 4 à 8 phrases sur une seule ligne, sans retour à la ligne, sans utiliser le caractère "|")
 ###FIN_TRADES###
 ###FORCES###
 (3 à 5 points forts du mois, un point par ligne commençant par "- ", chacun expliqué en détail comme demandé ci-dessus)
@@ -4794,14 +4870,13 @@ Réponds STRICTEMENT dans ce format, sans aucune balise HTML ni markdown, texte 
 }
 function pmParseSection(answer, tag) {
   const m = answer.match(new RegExp('###' + tag + '###([\\s\\S]*?)###FIN_' + tag + '###'));
-  return m ? m[1].trim() : '';
+  return m ? pmStripHtml(m[1].trim()) : '';
 }
 
-// Assemble le PDF final avec jsPDF (chargé en CDN, voir index.html). Structure fixe,
-// identique chaque mois, UNE PAGE = UN SUJET, avec de vraies captures d'écran (pas de
-// recréation) : page de garde, introduction, évolution du capital + P&L (même page),
-// calendrier réel, win rate réel, KPI réels (vue d'ensemble), analyse trade par trade
-// (vraies fiches techniques), points forts, axes de travail, évolution, conclusion.
+// Assemble le PDF final avec jsPDF (chargé en CDN, voir index.html), avec de vraies
+// captures d'écran (pas de recréation). Les sections s'enchaînent en continu (pas de
+// saut de page forcé entre chaque sujet), séparées par une fine ligne de thème — une
+// nouvelle page n'arrive que quand le contenu ne tient vraiment plus.
 function pmBuildPDF(o) {
   const th = o.theme;
   const bgRgb = pmRgb(th.bg, '#0b0f1a');
@@ -4809,7 +4884,7 @@ function pmBuildPDF(o) {
   const mutedRgb = pmRgb(th.muted, '#64748b');
   const titleRgb = pmRgb(th.titleColor, '#00e5a0');
   const greenRgb = pmRgb(th.green, '#00e5a0');
-  const redRgb = pmRgb(th.red, '#ef4444');
+  const borderRgb = pmRgb(th.border, '#1e2d45');
 
   const {jsPDF} = window.jspdf;
   const doc = new jsPDF({unit: 'pt', format: 'a4'});
@@ -4829,6 +4904,17 @@ function pmBuildPDF(o) {
   };
   const ensureSpace = h => {
     if (y + h > pageH - margin) addPage();
+  };
+  // Sépare deux sections par une fine ligne (couleur de bordure du thème) plutôt que
+  // par un saut de page forcé — le contenu reste collé, une nouvelle page n'arrive
+  // que si ensureSpace() le juge nécessaire.
+  const sectionSep = () => {
+    ensureSpace(24);
+    y += 6;
+    doc.setDrawColor(borderRgb[0], borderRgb[1], borderRgb[2]);
+    doc.setLineWidth(0.75);
+    doc.line(margin, y, pageW - margin, y);
+    y += 18;
   };
   const addTitle = (text, size = 16) => {
     ensureSpace(size + 16);
@@ -4850,7 +4936,7 @@ function pmBuildPDF(o) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(size);
     doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
-    const lines = doc.splitTextToSize(text || '—', pageW - margin * 2);
+    const lines = doc.splitTextToSize(pmStripHtml(text) || '—', pageW - margin * 2);
     lines.forEach(line => {
       ensureSpace(size * 1.4);
       doc.text(line, margin, y);
@@ -4889,9 +4975,9 @@ function pmBuildPDF(o) {
   doc.text('Généré le ' + new Date().toLocaleDateString('fr-FR'), margin, pageH / 2 + 30);
   doc.setTextColor(greenRgb[0], greenRgb[1], greenRgb[2]);
   doc.text('Trading Journal Pro', margin, pageH - margin);
+  addPage(); // seul saut de page forcé : passer de la couverture au contenu
 
   // ── Introduction ──
-  addPage();
   addTitle('Introduction');
   addText(o.intro);
   addText(
@@ -4904,7 +4990,7 @@ function pmBuildPDF(o) {
   );
 
   // ── Évolution du capital + P&L (même page, vraies captures des vrais graphiques) ──
-  addPage();
+  sectionSep();
   addTitle('Évolution du capital & P&L quotidien');
   addText(o.capitalTxt);
   addSubtitle('Évolution du capital (capture réelle)');
@@ -4913,13 +4999,13 @@ function pmBuildPDF(o) {
   addImageFit(o.charts.pnl.dataUrl, o.charts.pnl.w, o.charts.pnl.h, 260);
 
   // ── Calendrier (vraie capture de la vraie page Calendrier) ──
-  addPage();
+  sectionSep();
   addTitle('Calendrier du mois');
   addImageFit(o.calImg.dataUrl, o.calImg.w, o.calImg.h, 620);
   addText(o.calendrierTxt);
 
   // ── Win Rate (vraie capture du vrai graphique) ──
-  addPage();
+  sectionSep();
   addTitle('Win Rate');
   addImageFit(o.charts.pie.dataUrl, o.charts.pie.w, o.charts.pie.h, 280);
   const fr2 = n => (n || 0).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -4929,25 +5015,40 @@ function pmBuildPDF(o) {
   );
   addText(o.winrateTxt);
 
-  // ── KPI — vue d'ensemble (vraie capture du vrai bandeau, avec tes modifications) ──
-  addPage();
+  // ── KPI — vue d'ensemble (vraie capture du vrai bandeau, avec tes modifications), ──
+  // ── puis une analyse détaillée, CASE PAR CASE, comparée au mois précédent ──
+  sectionSep();
   addTitle('KPI — Vue d’ensemble');
-  addText("Capture réelle de ton bandeau KPI actuel (avec tes icônes, couleurs et modifications personnelles) — ce sont des compteurs globaux de ton compte, pas filtrés sur le mois.", 10);
+  addText("Capture réelle de ton bandeau KPI actuel (avec tes icônes, couleurs et modifications personnelles) — ce sont des compteurs globaux de ton compte. L'analyse ci-dessous compare, elle, ton mois analysé au mois précédent.", 10);
   addImageFit(o.kpiImg.dataUrl, o.kpiImg.w, o.kpiImg.h, 260);
+  addSubtitle('P&L');
+  addText(o.kpi.pnl);
+  addSubtitle('Win Rate');
+  addText(o.kpi.winrate);
+  addSubtitle('RR Moyen');
+  addText(o.kpi.rr);
+  addSubtitle('Profit Factor');
+  addText(o.kpi.pf);
+  addSubtitle('Nombre de trades');
+  addText(o.kpi.trades);
+  if (o.kpi.payout) {
+    addSubtitle('Payout');
+    addText(o.kpi.payout);
+  }
 
-  // ── Analyse trade par trade (vraies fiches techniques, comme dans le chat) ──
-  addPage();
+  // ── Analyse trade par trade (vraies fiches techniques, comme dans le chat, en ──
+  // ── pleine largeur, images séparées en plus grand juste en dessous) ──
+  sectionSep();
   addTitle('Analyse trade par trade');
   o.tradeEntries.forEach(te => {
-    if (te.img) {
-      ensureSpace(60);
-      const fitW2 = 230;
-      const fitH = (fitW2 * te.img.h) / te.img.w;
-      ensureSpace(fitH + 10);
-      doc.addImage(te.img.dataUrl, 'PNG', margin, y, fitW2, fitH);
-      y += fitH + 8;
+    if (te.cardImg) {
+      ensureSpace(80);
+      addImageFit(te.cardImg.dataUrl, te.cardImg.w, te.cardImg.h, 420);
     } else {
       addText(te.head, 10.5);
+    }
+    if (te.imgsImg) {
+      addImageFit(te.imgsImg.dataUrl, te.imgsImg.w, te.imgsImg.h, 240);
     }
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
@@ -4956,26 +5057,26 @@ function pmBuildPDF(o) {
     doc.text('Verdict : ' + (te.verdict || '—'), margin, y);
     y += 14;
     addText(te.explication, 9.5);
-    y += 10;
+    y += 6;
+    sectionSep();
   });
 
   // ── Points forts ──
-  addPage();
   addTitle('Points forts');
   addText(o.forces);
 
   // ── Axes de travail ──
-  addPage();
+  sectionSep();
   addTitle('Axes de travail');
   addText(o.axes);
 
   // ── Évolution vs mois précédent ──
-  addPage();
+  sectionSep();
   addTitle('Évolution par rapport au mois précédent');
   addText(o.evolution);
 
   // ── Conclusion ──
-  addPage();
+  sectionSep();
   addTitle('Conclusion');
   addText(o.conclusion);
 
@@ -5019,6 +5120,7 @@ async function generateMonthlyReport() {
     const prevStats = pmStats(prevTrades);
     const weekly = pmWeeklyBreakdown(monthTrades, cur.first, cur.last);
     const wl = pmWinLossBreakdown(monthTrades);
+    const payouts = pmPayoutsInMonth(pmYMD(cur.first), pmYMD(cur.last));
     const theme = pmTheme();
 
     statusEl.textContent = 'Capture des graphiques réels du mois...';
@@ -5031,26 +5133,41 @@ async function generateMonthlyReport() {
     const kpiImg = await pmCaptureKpiStripReal();
 
     statusEl.textContent = `Capture des fiches de trade (0/${monthTrades.length})...`;
-    const tradeImgs = {};
+    const tradeCardImgs = {};
+    const tradeImgsImgs = {};
     for (let i = 0; i < monthTrades.length; i++) {
       const t = monthTrades[i];
       try {
-        tradeImgs[t.id] = await pmCaptureTradeCard(t);
+        tradeCardImgs[t.id] = await pmCaptureTradeCard(t);
       } catch (e) {
         console.warn('Capture de fiche de trade échouée pour le trade', t.id, e);
-        tradeImgs[t.id] = null;
+        tradeCardImgs[t.id] = null;
+      }
+      try {
+        tradeImgsImgs[t.id] = await pmCaptureTradeImages(t);
+      } catch (e) {
+        console.warn('Capture des images du trade échouée pour le trade', t.id, e);
+        tradeImgsImgs[t.id] = null;
       }
       statusEl.textContent = `Capture des fiches de trade (${i + 1}/${monthTrades.length})...`;
     }
 
     statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
-    const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, weekly, wl);
+    const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, weekly, wl, payouts);
     const {answer} = await pcAskAI(prompt, APP.trades || [], []);
 
-    const intro = pmParseSection(answer, 'INTRO') || answer;
+    const intro = pmParseSection(answer, 'INTRO') || pmStripHtml(answer);
     const capitalTxt = pmParseSection(answer, 'CAPITAL');
     const calendrierTxt = pmParseSection(answer, 'CALENDRIER');
     const winrateTxt = pmParseSection(answer, 'WINRATE');
+    const kpi = {
+      pnl: pmParseSection(answer, 'KPI_PNL'),
+      winrate: pmParseSection(answer, 'KPI_WINRATE'),
+      rr: pmParseSection(answer, 'KPI_RR'),
+      pf: pmParseSection(answer, 'KPI_PF'),
+      trades: pmParseSection(answer, 'KPI_TRADES'),
+      payout: payouts.total ? pmParseSection(answer, 'KPI_PAYOUT') : ''
+    };
     const tradesRaw = pmParseSection(answer, 'TRADES');
     const forces = pmParseSection(answer, 'FORCES');
     const axes = pmParseSection(answer, 'AXES');
@@ -5068,13 +5185,13 @@ async function generateMonthlyReport() {
       .map(line => {
         const parts = line.split('|');
         const id = parseInt(parts[0], 10);
-        const verdict = (parts[1] || '').trim();
-        const explication = (parts.slice(2).join('|') || '').trim();
+        const verdict = pmStripHtml((parts[1] || '').trim());
+        const explication = pmStripHtml((parts.slice(2).join('|') || '').trim());
         const t = byId[id];
         const head = t
           ? `${(t.date || '').split('-').reverse().join('/')} — ${t.paire || '?'} ${t.dir || ''}`
           : 'Trade #' + (isNaN(id) ? '?' : id);
-        return {head, verdict, explication, img: tradeImgs[id] || null};
+        return {head, verdict, explication, cardImg: tradeCardImgs[id] || null, imgsImg: tradeImgsImgs[id] || null};
       });
 
     const doc = pmBuildPDF({
@@ -5083,6 +5200,7 @@ async function generateMonthlyReport() {
       capitalTxt,
       calendrierTxt,
       winrateTxt,
+      kpi,
       forces,
       axes,
       evolution,
