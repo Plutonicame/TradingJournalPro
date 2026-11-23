@@ -4566,6 +4566,30 @@ async function pmWithPageVisible(pageId, fn) {
 // Crée un conteneur hors-écran pour y injecter du HTML qui réutilise de vraies classes
 // CSS de l'app (ex : la fiche de trade partagée dans le chat) sans dépendre d'une page
 // particulière de l'app — utilisé pour les fiches de trade (voir pmCaptureTradeCard).
+// Attend que toutes les <img> d'un conteneur aient fini de charger (succès ou échec)
+// avant de capturer — sans ça, html2canvas peut capturer une image pas encore
+// chargée (encore vide/transparente), ce qui donnait des cases noires/vides dans le
+// PDF au lieu des vraies photos du trade.
+async function pmWaitImages(root, timeoutMs) {
+  const imgs = Array.from(root.querySelectorAll('img'));
+  await Promise.all(
+    imgs.map(img => {
+      if (img.complete && img.naturalWidth > 0) return Promise.resolve();
+      return new Promise(resolve => {
+        let done = false;
+        const finish = () => {
+          if (!done) {
+            done = true;
+            resolve();
+          }
+        };
+        img.addEventListener('load', finish, {once: true});
+        img.addEventListener('error', finish, {once: true});
+        setTimeout(finish, timeoutMs || 8000);
+      });
+    })
+  );
+}
 async function pmSnapshot(buildFn, width) {
   await pmEnsureSnapshotTools();
   const host = document.createElement('div');
@@ -4578,6 +4602,7 @@ async function pmSnapshot(buildFn, width) {
   document.body.appendChild(host);
   try {
     buildFn(host);
+    await pmWaitImages(host);
     await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
     return await pmCaptureEl(host);
   } finally {
@@ -4706,7 +4731,7 @@ async function pmCaptureTradeImages(t) {
       `<div style="display:flex;gap:10px;flex-wrap:wrap;">${imgs
         .map(
           src =>
-            `<img src="${src}" style="width:290px;height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`
+            `<img src="${src}" crossorigin="anonymous" onerror="this.style.display='none'" style="width:290px;height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--border);">`
         )
         .join('')}</div>`;
   }, 980);
