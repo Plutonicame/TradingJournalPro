@@ -1118,12 +1118,26 @@ function fcRenderMessages() {
   const box = document.getElementById('fcMessages');
   if (!box) return;
   const me = currentUser && currentUser.id;
+  // On capture l'état de scroll AVANT de reconstruire, pour ne pas faire
+  // sauter la vue si l'utilisateur est en train de lire d'anciens messages.
+  const prevScrollHeight = box.scrollHeight;
+  const prevScrollTop = box.scrollTop;
+  const prevClientHeight = box.clientHeight;
+  const distFromBottom = prevScrollHeight - prevScrollTop - prevClientHeight;
+  const wasNearBottom = !box.firstChild || distFromBottom < 80;
   if (!fcMessages.length) {
     box.innerHTML = '<div class="fc-empty-hint">Aucun message pour le moment.</div>';
     return;
   }
   box.innerHTML = fcMessages.map((m) => fcRenderMessageRow(m, me)).join('');
-  box.scrollTop = box.scrollHeight;
+  if (wasNearBottom) {
+    box.scrollTop = box.scrollHeight;
+  } else {
+    // On restaure la même distance par rapport au bas plutôt que de forcer
+    // le scroll, pour que la position de lecture reste stable même si la
+    // hauteur du contenu a légèrement changé (edit, réaction, nouveau message...).
+    box.scrollTop = Math.max(0, box.scrollHeight - prevClientHeight - distFromBottom);
+  }
 }
 
 // ══ Modifier / supprimer un message (uniquement les siens) ══
