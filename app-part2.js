@@ -4616,7 +4616,10 @@ async function pmSnapshot(buildFn, width) {
 // dessin (drawEquity/drawPnl/drawPie, qui dessinent sur les vrais canvas #cEq/#cPnl/
 // #cPie), on capture chaque vraie carte, puis on restaure tout (refreshAllCharts()
 // remet les vraies données actuelles sur les vrais graphiques, exactement comme avant).
-async function pmCaptureTrackRecordCharts(cur) {
+async function pmCaptureTrackRecordCharts(cur, onStep) {
+  const step = msg => {
+    if (typeof onStep === 'function') onStep(msg);
+  };
   return pmWithPageVisible('page-trackrecord', async () => {
     PM_NOW_OVERRIDE = cur.last;
     try {
@@ -4624,11 +4627,14 @@ async function pmCaptureTrackRecordCharts(cur) {
       drawPnl('mois');
       drawPie('mois');
       await new Promise(r => setTimeout(r, 1100));
+      step("Récupération de l'évolution du capital...");
       const eqEl = document.getElementById('cEq').closest('.chart-card');
-      const pnlEl = document.getElementById('cPnl').closest('.chart-card');
-      const pieEl = document.getElementById('cPie').closest('.chart-card');
       const eq = await pmCaptureEl(eqEl);
+      step('Récupération du P&L quotidien...');
+      const pnlEl = document.getElementById('cPnl').closest('.chart-card');
       const pnl = await pmCaptureEl(pnlEl);
+      step('Récupération du win rate...');
+      const pieEl = document.getElementById('cPie').closest('.chart-card');
       const pie = await pmCaptureEl(pieEl);
       return {eq, pnl, pie};
     } finally {
@@ -4698,7 +4704,7 @@ function pmBuildTradeCardPayload(t, opts) {
     conf: t.conf || '',
     backtest: !!t.backtest,
     customFields: typeof fcCollectCustomFields === 'function' ? fcCollectCustomFields(t) : [],
-    images: noImages ? [] : Array.isArray(t.images) ? t.images.slice(0, 6) : []
+    images: noImages ? [] : Array.isArray(t.images) ? t.images.slice(0, 8) : []
   };
 }
 // Fiche LARGE pour le PDF : même fonction/mêmes classes que la fiche envoyée dans le
@@ -4721,7 +4727,7 @@ async function pmCaptureTradeCard(t) {
 // affichées plus grandes juste sous la fiche, avec une légende rappelant de quel
 // trade il s'agit (utile si la page se termine entre les deux).
 async function pmCaptureTradeImages(t) {
-  const imgs = Array.isArray(t.images) ? t.images.slice(0, 6) : [];
+  const imgs = Array.isArray(t.images) ? t.images.slice(0, 8) : [];
   if (!imgs.length) return null;
   const dateStr = (t.date || '').split('-').reverse().join('/');
   const caption = `${dateStr} — ${t.paire || '?'} ${t.dir || ''}`.trim();
@@ -5148,25 +5154,30 @@ async function generateMonthlyReport() {
     const payouts = pmPayoutsInMonth(pmYMD(cur.first), pmYMD(cur.last));
     const theme = pmTheme();
 
-    statusEl.textContent = 'Capture des graphiques réels du mois...';
-    const charts = await pmCaptureTrackRecordCharts(cur);
+    const charts = await pmCaptureTrackRecordCharts(cur, msg => {
+      statusEl.textContent = msg;
+    });
 
-    statusEl.textContent = 'Capture du calendrier réel...';
+    statusEl.textContent = 'Récupération du calendrier...';
     const calImg = await pmCaptureCalendarReal(cur.year, cur.month);
 
-    statusEl.textContent = 'Capture de tes KPI réels...';
+    statusEl.textContent = 'Récupération de tes KPI...';
     const kpiImg = await pmCaptureKpiStripReal();
 
-    statusEl.textContent = `Capture des fiches de trade (0/${monthTrades.length})...`;
     const tradeCardImgs = {};
     const tradeImgsImgs = {};
     for (let i = 0; i < monthTrades.length; i++) {
       const t = monthTrades[i];
+      const label = `${(t.date || '').split('-').reverse().join('/')} ${t.paire || ''}`.trim();
+      statusEl.textContent = `Récupération de la fiche du trade ${label} (${i + 1}/${monthTrades.length})...`;
       try {
         tradeCardImgs[t.id] = await pmCaptureTradeCard(t);
       } catch (e) {
         console.warn('Capture de fiche de trade échouée pour le trade', t.id, e);
         tradeCardImgs[t.id] = null;
+      }
+      if (Array.isArray(t.images) && t.images.length) {
+        statusEl.textContent = `Récupération des graphiques du trade ${label} (${i + 1}/${monthTrades.length})...`;
       }
       try {
         tradeImgsImgs[t.id] = await pmCaptureTradeImages(t);
@@ -5174,10 +5185,9 @@ async function generateMonthlyReport() {
         console.warn('Capture des images du trade échouée pour le trade', t.id, e);
         tradeImgsImgs[t.id] = null;
       }
-      statusEl.textContent = `Capture des fiches de trade (${i + 1}/${monthTrades.length})...`;
     }
 
-    statusEl.textContent = "Analyse IA en cours (peut prendre jusqu'à une minute)...";
+    statusEl.textContent = "L'IA rédige ton récap : introduction, analyse de chaque trade, points forts, axes de travail, comparaison avec le mois dernier...";
     const prompt = pmBuildPrompt(cur.label, prev.label, monthTrades, curStats, prevStats, weekly, wl, payouts);
     const {answer} = await pcAskAI(prompt, APP.trades || [], []);
 
