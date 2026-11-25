@@ -441,6 +441,19 @@
       </div>
     </div>
   </div>
+  <div class="card" id="storageUsageCard">
+    <div class="card-header" style="flex-wrap:nowrap;gap:16px;">
+      <div class="card-title" data-editable data-tvar="--crt-storagelabel" style="color:var(--crt-storagelabel,#64748b);white-space:nowrap;flex:0 0 auto;">Espace disponible</div>
+      <div style="flex:1 1 auto;display:flex;flex-direction:column;align-items:stretch;gap:4px;min-width:100px;">
+        <div id="storageMaxLabel" data-editable data-tvar="--crt-storagemax" style="align-self:flex-end;font-size:11px;font-weight:600;color:var(--crt-storagemax,#64748b);">10 Go</div>
+        <div id="storageBarTrack" data-tvar="--crt-storageborder" style="position:relative;width:100%;height:20px;border-radius:10px;border:2px solid var(--crt-storageborder,#1e2d45);background:var(--crt-storageempty,#202a3f);overflow:hidden;">
+          <div id="storageBarMine" data-tvar="--crt-storagefill" title="" style="position:absolute;left:0;top:0;bottom:0;width:0%;background:var(--crt-storagefill,#00e5a0);transition:width .4s;"></div>
+          <div id="storageBarOthers" data-tvar="--crt-storagefillothers" title="" style="position:absolute;right:0;top:0;bottom:0;width:0%;background:var(--crt-storagefillothers,#60a5fa);transition:width .4s;display:none;"></div>
+          <div id="storageBarTick" data-tvar="--crt-storagetick" style="position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--crt-storagetick,#e2e8f0);display:none;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="card">
     <div class="card-header"><div class="card-title" data-editable data-tvar="--crt-historique" style="color:var(--crt-historique,#00e5a0)">HISTORIQUE DES TRADES</div>
       <div style="display:flex;gap:6px;align-items:center;">

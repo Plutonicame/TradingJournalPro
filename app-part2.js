@@ -366,6 +366,8 @@ async function afterPinValidated() {
 
   setTimeout(startRealtime, 500);
   startPolling();
+
+  if (typeof tjpInitStorageBar === 'function') tjpInitStorageBar();
 }
 
 // Empreinte simple (non cryptographique, juste pour détecter un changement) du
@@ -2099,6 +2101,70 @@ async function deleteTradeImageFromR2(url) {
     });
   } catch (e) {
     console.warn('Suppression image R2 échouée (ignorée) :', e);
+  }
+}
+
+// ══ Barre de stockage (Journal de trading, entre Nouveau Trade et Historique) ══
+// Affiche l'usage réel du compte par rapport au quota (10 Go pour l'admin,
+// 5 Go pour tous les autres comptes — déjà appliqué côté serveur dans
+// r2-upload, voir ses commentaires). Pour l'admin, la barre montre aussi,
+// en partant de la droite, le total agrégé de TOUS les autres comptes (jamais
+// le détail compte par compte — tjp_storage_overview() ne renvoie qu'un total).
+const TJP_STORAGE_ADMIN_UID = 'ccefdf06-20fe-457b-97c1-be5acd82bb80';
+let TJP_IS_ADMIN_ACCOUNT = false;
+
+function tjpFmtGo(bytes) {
+  const go = (bytes || 0) / (1024 * 1024 * 1024);
+  return go.toFixed(go < 1 ? 3 : 2).replace('.', ',') + ' Go';
+}
+
+async function tjpInitStorageBar() {
+  if (!currentUser || !currentUser.id) return;
+  try {
+    const {data, error} = await sb.rpc('tjp_storage_overview');
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return;
+    TJP_IS_ADMIN_ACCOUNT = row.is_admin === true;
+    tjpRenderStorageBar(Number(row.my_bytes) || 0, Number(row.others_bytes) || 0, TJP_IS_ADMIN_ACCOUNT);
+  } catch (e) {
+    console.warn('Chargement de la barre de stockage échoué (ignoré) :', e);
+  }
+}
+
+function tjpRenderStorageBar(myBytes, othersBytes, isAdmin) {
+  const GB = 1024 * 1024 * 1024;
+  const mineEl = document.getElementById('storageBarMine');
+  const othersEl = document.getElementById('storageBarOthers');
+  const tickEl = document.getElementById('storageBarTick');
+  const maxLabelEl = document.getElementById('storageMaxLabel');
+  if (!mineEl || !othersEl || !tickEl || !maxLabelEl) return;
+
+  const maxBytes = (isAdmin ? 10 : 5) * GB;
+  const myPct = Math.max(0, Math.min(100, (myBytes / maxBytes) * 100));
+  mineEl.style.width = myPct + '%';
+  mineEl.title = `Mes trades : ${tjpFmtGo(myBytes)}`;
+
+  if (isAdmin) {
+    const othersPct = Math.max(0, Math.min(100 - myPct, (othersBytes / maxBytes) * 100));
+    othersEl.style.width = othersPct + '%';
+    othersEl.style.display = '';
+    othersEl.title = `Autres comptes : ${tjpFmtGo(othersBytes)}`;
+    tickEl.style.display = '';
+    // Le libellé "10 Go" reste éditable (texte + couleur, mode stylo) — on ne
+    // touche surtout pas à son contenu ici, pour ne jamais écraser un texte
+    // déjà personnalisé par l'admin.
+  } else {
+    othersEl.style.display = 'none';
+    othersEl.title = '';
+    tickEl.style.display = 'none';
+    // Les comptes non-admin n'ont jamais ce paramètre en édition (ni texte, ni
+    // couleur dédiée) : la valeur est fixe et non interactive.
+    maxLabelEl.textContent = '5 Go';
+    maxLabelEl.removeAttribute('data-editable');
+    maxLabelEl.removeAttribute('data-tvar');
+    maxLabelEl.removeAttribute('contenteditable');
+    maxLabelEl.style.color = '';
   }
 }
 

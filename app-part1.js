@@ -2507,7 +2507,14 @@ const TITLE_DEFAULTS = {
   '--crt-sauvegarde': '#00e5a0',
   '--crt-themestylo': '#00e5a0',
   '--crt-resume': '#00e5a0',
-  '--crt-recapmensuel': '#00e5a0'
+  '--crt-recapmensuel': '#00e5a0',
+  '--crt-storagelabel': '#64748b',
+  '--crt-storagemax': '#64748b',
+  '--crt-storageborder': '#1e2d45',
+  '--crt-storageempty': '#202a3f',
+  '--crt-storagefill': '#00e5a0',
+  '--crt-storagefillothers': '#60a5fa',
+  '--crt-storagetick': '#e2e8f0'
 };
 function ensureTitleThemeDefaults() {
   Object.entries(TITLE_DEFAULTS).forEach(([vn, def]) => {
@@ -6542,6 +6549,11 @@ function buildTV() {
       page: 'Journal de trading',
       section: 'Historique des trades'
     },
+    {v: '--crt-storagelabel', l: 'Texte — Espace disponible', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storageborder', l: 'Barre — bordure', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storageempty', l: 'Barre — intérieur vide', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storagefill', l: 'Barre — intérieur rempli (mes trades)', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storagefillothers', l: 'Barre — intérieur rempli (autres comptes)', page: 'Journal de trading', section: 'Stockage'},
     {v: '--pt-calendrier', l: 'Titre de la page', page: 'Calendrier', section: 'Titre de page'},
     {v: '--pt-modifs', l: 'Titre de la page', page: 'Paramètres', section: 'Titre de page'},
     {
@@ -6589,6 +6601,8 @@ function buildTV() {
       section: 'Notifications'
     },
     // ══ Admin (outil de surveillance — paulolasko@gmail.com uniquement) ══
+    {v: '--crt-storagemax', l: 'Barre de stockage — texte « 10 Go »', page: 'Admin', section: 'Barre de stockage'},
+    {v: '--crt-storagetick', l: 'Barre de stockage — trait des 5 Go', page: 'Admin', section: 'Barre de stockage'},
     {v: '--sv-win-bg', l: 'Fenêtre utilisateur — fond', page: 'Admin', section: 'Fenêtre utilisateur'},
     {v: '--sv-win-bd', l: 'Fenêtre utilisateur — bordure', page: 'Admin', section: 'Fenêtre utilisateur'},
     {v: '--sv-win-bar-bg', l: 'Bandeau — fond', page: 'Admin', section: 'Fenêtre utilisateur'},
