@@ -2140,10 +2140,16 @@ function tjpRenderStorageBar(myBytes, othersBytes, isAdmin) {
   const maxLabelEl = document.getElementById('storageMaxLabel');
   if (!mineEl || !othersEl || !tickEl || !maxLabelEl) return;
 
-  const maxBytes = (isAdmin ? 10 : 5) * GB;
+  const myQuotaGo = isAdmin ? 10 : 5;
+  const maxBytes = myQuotaGo * GB;
   const myPct = Math.max(0, Math.min(100, (myBytes / maxBytes) * 100));
   mineEl.style.width = myPct + '%';
   mineEl.title = `Mes trades : ${tjpFmtGo(myBytes)}`;
+
+  // Valeur calculée en direct (voir tjpIsLiveTextEl côté pencil mode) : on la
+  // met à jour à chaque rendu sans jamais la figer, et jamais "X Go" tout
+  // seul mais bien l'usage réel par rapport au quota de CE compte.
+  maxLabelEl.textContent = `${tjpFmtGo(myBytes)} utilisés sur ${myQuotaGo} Go`;
 
   if (isAdmin) {
     const othersPct = Math.max(0, Math.min(100 - myPct, (othersBytes / maxBytes) * 100));
@@ -2151,16 +2157,14 @@ function tjpRenderStorageBar(myBytes, othersBytes, isAdmin) {
     othersEl.style.display = '';
     othersEl.title = `Autres comptes : ${tjpFmtGo(othersBytes)}`;
     tickEl.style.display = '';
-    // Le libellé "10 Go" reste éditable (texte + couleur, mode stylo) — on ne
-    // touche surtout pas à son contenu ici, pour ne jamais écraser un texte
-    // déjà personnalisé par l'admin.
+    // Le texte reste éditable (couleur via l'éditeur de thème, --crt-storagemax) —
+    // on ne touche qu'au textContent ci-dessus, jamais à ses attributs.
   } else {
     othersEl.style.display = 'none';
     othersEl.title = '';
     tickEl.style.display = 'none';
-    // Les comptes non-admin n'ont jamais ce paramètre en édition (ni texte, ni
-    // couleur dédiée) : la valeur est fixe et non interactive.
-    maxLabelEl.textContent = '5 Go';
+    // Les comptes non-admin n'ont jamais ce paramètre en édition (ni couleur
+    // dédiée) : la valeur reste fixe et non interactive.
     maxLabelEl.removeAttribute('data-editable');
     maxLabelEl.removeAttribute('data-tvar');
     maxLabelEl.removeAttribute('contenteditable');

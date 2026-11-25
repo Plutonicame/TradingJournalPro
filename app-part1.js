@@ -1222,6 +1222,14 @@ function sanitizePencilHtml(html) {
   })(tmp);
   return tmp.innerHTML;
 }
+// Vrai pour un élément data-editable dont le TEXTE est calculé en direct
+// (KPI affichés, usage de stockage...) : on fige sa couleur/taille si
+// l'utilisateur les personnalise, mais jamais son contenu texte, sinon il
+// resterait bloqué sur la valeur affichée au moment où le mode stylo a été
+// quitté au lieu de rester à jour.
+function tjpIsLiveTextEl(el) {
+  return /^disp[0-9]$/.test(el.id || '') || el.dataset.livevalue === '1';
+}
 function togglePencil() {
   pencilActive = !pencilActive;
   document.body.classList.toggle('pencil-mode', pencilActive);
@@ -1232,9 +1240,10 @@ function togglePencil() {
     document.querySelectorAll('[data-editable]').forEach(el => {
       el.removeAttribute('contenteditable');
       const k = getEK(el);
+      const isDynamic = tjpIsLiveTextEl(el);
       if (el.style.fontSize || el.style.color || el.innerHTML)
         edits[k] = {
-          html: sanitizePencilHtml(el.innerHTML),
+          html: isDynamic ? undefined : sanitizePencilHtml(el.innerHTML),
           fs: el.style.fontSize || '',
           col: el.style.color || '',
           t: Date.now()
@@ -1316,7 +1325,7 @@ if (!window._pencilDelegateSet) {
 function saveOneEdit(el) {
   const k = getEK(el);
   const edits = ls(accKey('tj_pencil_edits'), {});
-  const isDynamic = /^disp[0-9]$/.test(el.id || ''); // valeurs calculées en direct : ne jamais figer le texte
+  const isDynamic = tjpIsLiveTextEl(el); // valeurs calculées en direct : ne jamais figer le texte
   edits[k] = {
     html: isDynamic ? undefined : sanitizePencilHtml(el.innerHTML),
     fs: el.style.fontSize || '',
@@ -6554,6 +6563,8 @@ function buildTV() {
     {v: '--crt-storageempty', l: 'Barre — intérieur vide', page: 'Journal de trading', section: 'Stockage'},
     {v: '--crt-storagefill', l: 'Barre — intérieur rempli (mes trades)', page: 'Journal de trading', section: 'Stockage'},
     {v: '--crt-storagefillothers', l: 'Barre — intérieur rempli (autres comptes)', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storagemax', l: 'Texte « X Go utilisés sur Y Go »', page: 'Journal de trading', section: 'Stockage'},
+    {v: '--crt-storagetick', l: 'Barre — trait des 5 Go', page: 'Journal de trading', section: 'Stockage'},
     {v: '--pt-calendrier', l: 'Titre de la page', page: 'Calendrier', section: 'Titre de page'},
     {v: '--pt-modifs', l: 'Titre de la page', page: 'Paramètres', section: 'Titre de page'},
     {
@@ -6601,8 +6612,6 @@ function buildTV() {
       section: 'Notifications'
     },
     // ══ Admin (outil de surveillance — paulolasko@gmail.com uniquement) ══
-    {v: '--crt-storagemax', l: 'Barre de stockage — texte « 10 Go »', page: 'Admin', section: 'Barre de stockage'},
-    {v: '--crt-storagetick', l: 'Barre de stockage — trait des 5 Go', page: 'Admin', section: 'Barre de stockage'},
     {v: '--sv-win-bg', l: 'Fenêtre utilisateur — fond', page: 'Admin', section: 'Fenêtre utilisateur'},
     {v: '--sv-win-bd', l: 'Fenêtre utilisateur — bordure', page: 'Admin', section: 'Fenêtre utilisateur'},
     {v: '--sv-win-bar-bg', l: 'Bandeau — fond', page: 'Admin', section: 'Fenêtre utilisateur'},
