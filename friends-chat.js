@@ -968,7 +968,10 @@ async function fcLoadMessages(friendId) {
     }
     fcMessages = data || [];
     await fcLoadReactionsFor(fcMessages.map((m) => m.id));
-    fcRenderMessages();
+    // Ouverture d'une conversation : on atterrit toujours tout en bas (dernier
+    // message), sans dépendre de l'heuristique "proche du bas" qui sert aux
+    // mises à jour en direct (nouveau message/réaction) pendant la lecture.
+    fcRenderMessages(true);
   } catch (e) {
     console.warn('fcLoadMessages:', e);
   }
@@ -1114,7 +1117,7 @@ function fcOnMessageRowClick(e, rowEl) {
   });
   rowEl.classList.toggle('show-react');
 }
-function fcRenderMessages() {
+function fcRenderMessages(force) {
   const box = document.getElementById('fcMessages');
   if (!box) return;
   const me = currentUser && currentUser.id;
@@ -1124,7 +1127,7 @@ function fcRenderMessages() {
   const prevScrollTop = box.scrollTop;
   const prevClientHeight = box.clientHeight;
   const distFromBottom = prevScrollHeight - prevScrollTop - prevClientHeight;
-  const wasNearBottom = !box.firstChild || distFromBottom < 80;
+  const wasNearBottom = force || !box.firstChild || distFromBottom < 80;
   if (!fcMessages.length) {
     box.innerHTML = '<div class="fc-empty-hint">Aucun message pour le moment.</div>';
     return;
@@ -1132,6 +1135,18 @@ function fcRenderMessages() {
   box.innerHTML = fcMessages.map((m) => fcRenderMessageRow(m, me)).join('');
   if (wasNearBottom) {
     box.scrollTop = box.scrollHeight;
+    if (force) {
+      // Ouverture fraîche d'une conversation : on doit atterrir tout en bas,
+      // sans ambiguïté. On réaffirme la position après que le navigateur ait
+      // fini de mettre en page (images, polices...), au cas où scrollHeight
+      // aurait changé entre-temps — jamais pour remonter l'utilisateur,
+      // seulement pour garantir l'arrivée en bas à l'ouverture.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (box.isConnected) box.scrollTop = box.scrollHeight;
+        });
+      });
+    }
   } else {
     // On restaure la même distance par rapport au bas plutôt que de forcer
     // le scroll, pour que la position de lecture reste stable même si la
