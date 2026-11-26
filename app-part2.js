@@ -1116,9 +1116,44 @@ async function cloudDeleteAccount(accId) {
 // Renvoie true si la sauvegarde a bien abouti côté serveur, false sinon — utilisé
 // par pcAskAI pour savoir si les données côté serveur sont fiables avant de laisser
 // l'IA les interroger elle-même (sinon, mieux vaut les lui envoyer directement).
+// Session morte (jeton ET rafraîchissement tous les deux invalides — typiquement
+// après une très longue session ouverte, ou un jeton de rafraîchissement déjà
+// consommé par un autre onglet/appareil connecté au même compte) : on arrête
+// d'essayer en boucle (heartbeat, sauvegardes...) tant que l'utilisateur n'a pas
+// rechargé/reconnecté, au lieu de marteler le serveur avec une session morte —
+// c'est ce qui causait des échecs "row-level security" en rafale (auth.uid()
+// devient null dès que le jeton n'est plus valide, donc plus aucune policy ne
+// passe, sur AUCUNE table).
+let _tjpSessionDead = false;
+async function tjpTryRecoverSession() {
+  if (_tjpSessionDead) return false;
+  try {
+    const {data, error} = await sb.auth.refreshSession();
+    if (!error && data && data.session) return true;
+  } catch (e) {}
+  _tjpSessionDead = true;
+  pcShowSessionExpiredWarning();
+  return false;
+}
+function pcShowSessionExpiredWarning() {
+  let bar = document.getElementById('syncFailBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'syncFailBar';
+    bar.style.cssText =
+      'position:relative;width:100%;background:var(--msg-banner-bg,#ef4444);color:var(--msg-banner-tx,#fff);font-family:var(--mono);font-size:12px;padding:8px 14px;text-align:center;z-index:900;cursor:pointer;box-sizing:border-box;';
+    document.body.prepend(bar);
+  }
+  bar.onclick = () => window.location.reload();
+  bar.textContent =
+    '⚠ Ta session a expiré — tes derniers trades ne sont peut-être pas synchronisés. Touche ici pour te reconnecter.';
+  bar.style.display = 'block';
+}
+
 async function pushToCloud(opts) {
   opts = opts || {};
   if (!currentUser || !currentUser.id) return false;
+  if (_tjpSessionDead) return false;
   // Verrou de la vue admin "surveillance" : cadenas fermé = AUCUNE écriture ne
   // part vers le cloud, quel que soit le bouton qui a déclenché l'appel. Seul
   // point d'entrée réseau pour les trades/réglages/thème — voir admin-tools.js.
@@ -1232,6 +1267,17 @@ async function pushToCloud(opts) {
 
     if (error) {
       console.error('Erreur sauvegarde journal_data :', error);
+      const looksLikeDeadSession = /row-level security|permission denied|JWT/i.test(error.message || '');
+      if (looksLikeDeadSession && !opts._retriedAfterRefresh) {
+        // Le jeton est peut-être mort (session trop vieille, jeton de
+        // rafraîchissement déjà consommé ailleurs...) : UN essai de
+        // rafraîchissement + nouvel envoi avant d'abandonner, plutôt que de
+        // laisser l'utilisateur taper "réessayer" en boucle sur la même
+        // session morte (c'est ce qui se passait avant ce correctif).
+        const recovered = await tjpTryRecoverSession();
+        if (recovered) return pushToCloud(Object.assign({}, opts, {_retriedAfterRefresh: true}));
+        return false; // tjpTryRecoverSession() a déjà affiché le bandeau "session expirée"
+      }
       showSync('⚠ ' + (error.message || 'Erreur sauvegarde'), '#ef4444');
       pcShowSyncFailureWarning(error.message || 'Erreur inconnue');
       return false;
@@ -2055,6 +2101,9 @@ async function uploadTradeImageToR2(compressedDataUrl) {
       console.warn('Upload image vers R2 échoué, conservation en local :', data.error || res.status);
       return compressedDataUrl;
     }
+    // Rafraîchit la barre de stockage tout de suite (sans attendre) : l'upload
+    // vient de changer l'usage réel du compte.
+    if (typeof tjpInitStorageBar === 'function') tjpInitStorageBar();
     return data.url || compressedDataUrl;
   } catch (e) {
     console.warn('Upload image vers R2 échoué (exception), conservation en local :', e);
@@ -2099,6 +2148,7 @@ async function deleteTradeImageFromR2(url) {
       headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + token},
       body: JSON.stringify(body)
     });
+    if (typeof tjpInitStorageBar === 'function') tjpInitStorageBar();
   } catch (e) {
     console.warn('Suppression image R2 échouée (ignorée) :', e);
   }

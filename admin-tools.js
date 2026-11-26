@@ -763,8 +763,16 @@ let _tjpHeartbeatTimer = null;
 function tjpStartHeartbeatLoop() {
   if (_tjpHeartbeatTimer) return;
   _tjpHeartbeatTimer = setInterval(async () => {
+    // Session déjà détectée comme morte (voir pushToCloud/tjpTryRecoverSession
+    // dans app-part2.js) : inutile de continuer à marteler le serveur toutes
+    // les 5s, l'utilisateur a déjà le bandeau "reconnecte-toi" affiché.
+    if (typeof _tjpSessionDead !== 'undefined' && _tjpSessionDead) return;
     try {
-      const {data} = await sb.rpc('tjp_heartbeat');
+      const {data, error} = await sb.rpc('tjp_heartbeat');
+      if (error) {
+        if (typeof tjpTryRecoverSession === 'function') await tjpTryRecoverSession();
+        return;
+      }
       if (data && data.banned_until && data.banned_until > data.now) {
         clearInterval(_tjpHeartbeatTimer);
         _tjpHeartbeatTimer = null;
