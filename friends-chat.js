@@ -1138,6 +1138,25 @@ function fcRenderMessages() {
     // hauteur du contenu a légèrement changé (edit, réaction, nouveau message...).
     box.scrollTop = Math.max(0, box.scrollHeight - prevClientHeight - distFromBottom);
   }
+
+  // Les images (fiches de trade partagées, photos de profil...) n'ont pas de
+  // taille réservée et chargent après coup, en agrandissant des messages déjà
+  // affichés plus haut dans le fil — ce qui repousse tout le contenu EN DESSOUS
+  // sans jamais changer scrollTop : la personne reste au même endroit "en
+  // pixels", mais ce qu'elle voit remonte dans la conversation (c'est ce qui
+  // donnait l'impression que ça "remontait tout seul" en arrivant en bas).
+  // On recolle en bas à chaque image qui termine de charger, mais seulement
+  // si on y est encore à CE moment-là (pas si la personne a depuis scrollé
+  // pour lire un ancien message).
+  box.querySelectorAll('img').forEach(img => {
+    if (img.complete) return;
+    const resnap = () => {
+      const stillNearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+      if (stillNearBottom) box.scrollTop = box.scrollHeight;
+    };
+    img.addEventListener('load', resnap, {once: true});
+    img.addEventListener('error', resnap, {once: true});
+  });
 }
 
 // ══ Modifier / supprimer un message (uniquement les siens) ══
