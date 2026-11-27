@@ -3,20 +3,28 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<!-- Évite que cette page elle-même reste en cache (certains hébergeurs/navigateurs
+     gardent index.html ~10 min) : seuls les fichiers versionnés (?v=...) ci-dessous
+     doivent être mis en cache, pas la page qui choisit quelle version charger. Sans
+     ça, une correction poussée sur GitHub peut sembler "ne pas marcher" juste parce
+     que le navigateur recharge une ancienne page qui pointe encore vers l'ancien JS. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <!-- Barre de titre de la fenêtre (PC, app installée) : #404040. Téléphone : couleur du fond de l'app. -->
 <meta name="theme-color" content="#404040" media="(hover: hover) and (pointer: fine)">
 <meta name="theme-color" content="#0b0d14">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<link rel="icon" href="icon-64.png?v=20261125a" type="image/png">
-<link rel="apple-touch-icon" href="icon-180.png?v=20261125a">
+<link rel="icon" href="icon-64.png?v=20261127a" type="image/png">
+<link rel="apple-touch-icon" href="icon-180.png?v=20261127a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="TJP">
-<link rel="manifest" href="manifest.webmanifest?v=20261125a">
+<link rel="manifest" href="manifest.webmanifest?v=20261127a">
 <title>Trading Journal Pro</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="chart.min.js?v=20261125a"></script>
-<script src="sortable.min.js?v=20261125a"></script>
-<script src="purify.min.js?v=20261125a"></script>
+<script src="chart.min.js?v=20261127a"></script>
+<script src="sortable.min.js?v=20261127a"></script>
+<script src="purify.min.js?v=20261127a"></script>
 <!-- Génération du PDF « Récap mensuel » (page Analyse IA). Plusieurs sources de
      secours : certains réseaux/applis bloquent cdnjs.cloudflare.com (alors que
      jsdelivr, déjà utilisé plus haut pour supabase-js, passe) — si la première
@@ -63,7 +71,7 @@
   tryLoad(0);
 })();
 </script>
-<link rel="stylesheet" href="style.css?v=20261125a">
+<link rel="stylesheet" href="style.css?v=20261127a">
 </head>
 <body>
 
@@ -671,7 +679,7 @@
 
 <div class="footer" style="display:none"></div>
 
-<script src="app-part1.js?v=20261125a"></script>
+<script src="app-part1.js?v=20261127a"></script>
 
 <!-- IMAGE VIEWER MODAL -->
 <div class="cp-overlay" id="imgViewModal">
@@ -805,20 +813,20 @@
 <!-- ══ SYNC STATUS ══ -->
 <div id="syncStatus" style="position:fixed;bottom:16px;right:16px;background:#161d2e;border:1px solid #1e2d45;border-radius:6px;padding:6px 12px;font-family:'Space Mono',monospace;font-size:10px;color:#6b7a99;z-index:20001;display:none;"></div>
 
-<script src="app-part2.js?v=20261125a"></script>
-<script src="custom-fields.js?v=20261125a"></script>
-<script src="emoji-data.js?v=20261125a"></script>
-<script src="friends-chat.js?v=20261125a"></script>
-<script src="admin-tools.js?v=20261125a"></script>
-<script src="partial-results.js?v=20261125a"></script>
-<script src="fullscreen-lock.js?v=20261125a"></script>
-<script src="period-calendar.js?v=20261125a"></script>
-<script src="calendar-timeframes.js?v=20261125a"></script>
-<script src="pair-forex.js?v=20261125a"></script>
-<script src="cashflow-link.js?v=20261125a"></script>
-<script src="theme-v2.js?v=20261125a"></script>
-<script src="payout-confetti.js?v=20261125a"></script>
-<script src="trade-startend.js?v=20261125a"></script>
+<script src="app-part2.js?v=20261127a"></script>
+<script src="custom-fields.js?v=20261127a"></script>
+<script src="emoji-data.js?v=20261127a"></script>
+<script src="friends-chat.js?v=20261127a"></script>
+<script src="admin-tools.js?v=20261127a"></script>
+<script src="partial-results.js?v=20261127a"></script>
+<script src="fullscreen-lock.js?v=20261127a"></script>
+<script src="period-calendar.js?v=20261127a"></script>
+<script src="calendar-timeframes.js?v=20261127a"></script>
+<script src="pair-forex.js?v=20261127a"></script>
+<script src="cashflow-link.js?v=20261127a"></script>
+<script src="theme-v2.js?v=20261127a"></script>
+<script src="payout-confetti.js?v=20261127a"></script>
+<script src="trade-startend.js?v=20261127a"></script>
 <script>
 // Mode téléphone : les horloges (ville + heure) s'adaptent à la place libre
 // à droite du bouton TJP : plus le bouton est petit, plus elles grandissent,
