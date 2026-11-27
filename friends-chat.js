@@ -968,6 +968,19 @@ async function fcLoadMessages(friendId) {
     }
     fcMessages = data || [];
     await fcLoadReactionsFor(fcMessages.map((m) => m.id));
+    // Les polices (Space Mono / DM Sans) sont chargées en "font-display: swap" :
+    // le texte s'affiche d'abord avec une police de secours, PUIS la vraie police
+    // arrive (souvent quelques centaines de ms plus tard) et remplace les lignes,
+    // ce qui change leur hauteur. Sur une conversation avec beaucoup de texte
+    // (des longues notes de trade, par exemple), ce remplacement redistribue les
+    // retours à la ligne sur plusieurs messages d'un coup et fait "remonter" la
+    // vue tout seule après coup, même si on vient de la coller en bas. On attend
+    // donc que les polices soient prêtes AVANT de calculer où est le bas.
+    if (typeof document !== 'undefined' && document.fonts && document.fonts.ready) {
+      try {
+        await document.fonts.ready;
+      } catch (e) {}
+    }
     // Ouverture d'une conversation : on atterrit toujours tout en bas (dernier
     // message), sans dépendre de l'heuristique "proche du bas" qui sert aux
     // mises à jour en direct (nouveau message/réaction) pendant la lecture.
@@ -1146,6 +1159,20 @@ function fcRenderMessages(force) {
           if (box.isConnected) box.scrollTop = box.scrollHeight;
         });
       });
+      // Filet de sécurité : si une police (Space Mono / DM Sans) finit de charger
+      // juste après (un poids/variante pas encore demandé avant ce rendu, donc pas
+      // couvert par le document.fonts.ready attendu dans fcLoadMessages), ça peut
+      // redistribuer les lignes d'un coup sur toute une conversation pleine de texte
+      // et faire "remonter" la vue toute seule. On recolle en bas une dernière fois
+      // dans ce cas précis, seulement si on est toujours sur cette même conversation.
+      if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
+        const friendAtOpen = fcActiveFriendId;
+        const onFontsLoaded = () => {
+          if (fcActiveFriendId === friendAtOpen && box.isConnected) box.scrollTop = box.scrollHeight;
+        };
+        document.fonts.addEventListener('loadingdone', onFontsLoaded);
+        setTimeout(() => document.fonts.removeEventListener('loadingdone', onFontsLoaded), 4000);
+      }
     }
   } else {
     // On restaure la même distance par rapport au bas plutôt que de forcer
