@@ -2234,12 +2234,25 @@ function fcResizeWrap() {
   const wrap = document.getElementById('fcWrap');
   const page = document.getElementById('page-ami');
   if (!wrap || !page || !page.classList.contains('active')) return;
+  const box = document.getElementById('fcMessages');
+  // Si la conversation était collée en bas AVANT ce redimensionnement du cadre
+  // (barre d'adresse mobile qui se rétracte/réapparaît, clavier qui s'ouvre ou
+  // se ferme...), on la recolle en bas APRÈS. Sinon, le simple changement de
+  // hauteur disponible (le scrollTop ne bouge pas, mais la fenêtre visible
+  // devient plus petite) donne l'impression que la conversation "remonte
+  // toute seule", sans qu'on ait jamais touché au scroll.
+  let wasAtBottom = false;
+  if (box) {
+    const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
+    wasAtBottom = dist < 80;
+  }
   const top = wrap.getBoundingClientRect().top;
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const pagePB = parseFloat(getComputedStyle(page).paddingBottom) || 0;
   let h = vh - top - pagePB - 8; // petite marge de sécurité anti-arrondi
   if (h < 260) h = 260;
   wrap.style.height = h + 'px';
+  if (box && wasAtBottom) box.scrollTop = box.scrollHeight;
 }
 function fcBindResizeHandlers() {
   if (fcResizeHandlersBound) return;
