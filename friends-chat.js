@@ -72,6 +72,26 @@ const FC_ICON_ATTACH =
 let fcContacts = []; // [{friendId, pseudo, photo}]
 let fcActiveFriendId = null;
 let fcMessages = [];
+// ── Garde-fou anti-téléportation du scroll de la conversation ──
+// Principe : le navigateur ne doit JAMAIS pouvoir déplacer tout seul la
+// position de défilement de #fcMessages (recalages liés à un redimensionnement
+// du cadre, à un remplacement de police, ou à toute autre cause) — seul un
+// vrai geste de l'utilisateur (molette, trackpad, barre de défilement) ou
+// notre propre code (via fcSetScroll, ouverture d'une conversation, nouveau
+// message...) a le droit de la bouger. fcLastGoodScrollTop retient la
+// dernière position considérée comme légitime ; dès qu'un évènement 'scroll'
+// arrive avec une valeur différente SANS geste utilisateur récent, on annule
+// ce changement immédiatement (voir le listener posé dans fcBindResizeHandlers).
+let fcLastGoodScrollTop = 0;
+let fcUserInputAt = 0;
+function fcSetScroll(el, value) {
+  el.scrollTop = value;
+  // On relit la valeur réellement appliquée (le navigateur la limite lui-même
+  // si on a demandé plus que le maximum possible), pour que le garde-fou du
+  // 'scroll' compare toujours à la vraie position, jamais à la valeur brute
+  // demandée.
+  fcLastGoodScrollTop = el.scrollTop;
+}
 let fcChannel = null;
 let fcActivityMap = {}; // friendId -> dernier created_at (tri de la liste)
 let fcLastMsgMap = {}; // friendId -> dernier message échangé (aperçu + heure dans la liste)
@@ -1147,7 +1167,7 @@ function fcRenderMessages(force) {
   }
   box.innerHTML = fcMessages.map((m) => fcRenderMessageRow(m, me)).join('');
   if (wasNearBottom) {
-    box.scrollTop = box.scrollHeight;
+    fcSetScroll(box, box.scrollHeight);
     if (force) {
       // Ouverture fraîche d'une conversation : on doit atterrir tout en bas,
       // sans ambiguïté. On réaffirme la position après que le navigateur ait
@@ -1156,7 +1176,7 @@ function fcRenderMessages(force) {
       // seulement pour garantir l'arrivée en bas à l'ouverture.
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          if (box.isConnected) box.scrollTop = box.scrollHeight;
+          if (box.isConnected) fcSetScroll(box, box.scrollHeight);
         });
       });
       // Filet de sécurité : si une police (Space Mono / DM Sans) finit de charger
@@ -1168,7 +1188,7 @@ function fcRenderMessages(force) {
       if (typeof document !== 'undefined' && document.fonts && document.fonts.addEventListener) {
         const friendAtOpen = fcActiveFriendId;
         const onFontsLoaded = () => {
-          if (fcActiveFriendId === friendAtOpen && box.isConnected) box.scrollTop = box.scrollHeight;
+          if (fcActiveFriendId === friendAtOpen && box.isConnected) fcSetScroll(box, box.scrollHeight);
         };
         document.fonts.addEventListener('loadingdone', onFontsLoaded);
         setTimeout(() => document.fonts.removeEventListener('loadingdone', onFontsLoaded), 4000);
@@ -1178,7 +1198,7 @@ function fcRenderMessages(force) {
     // On restaure la même distance par rapport au bas plutôt que de forcer
     // le scroll, pour que la position de lecture reste stable même si la
     // hauteur du contenu a légèrement changé (edit, réaction, nouveau message...).
-    box.scrollTop = Math.max(0, box.scrollHeight - prevClientHeight - distFromBottom);
+    fcSetScroll(box, Math.max(0, box.scrollHeight - prevClientHeight - distFromBottom));
   }
 }
 
@@ -2257,46 +2277,48 @@ function fcHandleIncomingMessage(m) {
 // ══ Le cadre du chat va toujours pile jusqu'en bas de l'écran (jamais plus,
 // jamais moins), quel que soit l'appareil : seules les listes internes
 // (contacts / conversation) défilent, jamais la page elle-même. ══
-// Position "collée en bas" de la conversation, mise à jour UNIQUEMENT par le
-// vrai évènement 'scroll' de #fcMessages (voir fcBindResizeHandlers). On ne la
-// recalcule JAMAIS à la volée à l'intérieur de fcResizeWrap : preuve à l'appui
-// (trace navigateur), le navigateur peut déjà avoir recalé scrollTop tout seul
-// (à cause d'un évènement visualViewport "resize" qui se déclenche en vrai,
-// pour une raison indépendante de la hauteur qu'on calcule nous-mêmes) AVANT
-// même que ce code ne s'exécute — donc mesurer fraîchement à ce moment-là
-// donnerait déjà la position fausse. En se basant sur le dernier scroll RÉEL
-// de l'utilisateur (antérieur à ce recalage involontaire), on sait encore que
-// c'était bien en bas juste avant, et on peut corriger.
-let fcAtBottom = true;
 function fcResizeWrap() {
   const wrap = document.getElementById('fcWrap');
   const page = document.getElementById('page-ami');
   if (!wrap || !page || !page.classList.contains('active')) return;
-  const box = document.getElementById('fcMessages');
   const top = wrap.getBoundingClientRect().top;
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const pagePB = parseFloat(getComputedStyle(page).paddingBottom) || 0;
   let h = vh - top - pagePB - 8; // petite marge de sécurité anti-arrondi
   if (h < 260) h = 260;
-  wrap.style.height = h + 'px';
-  if (box && fcAtBottom) {
-    box.scrollTop = box.scrollHeight;
-    requestAnimationFrame(() => {
-      if (box.isConnected && fcAtBottom) box.scrollTop = box.scrollHeight;
-    });
-  }
+  const hPx = h + 'px';
+  if (wrap.style.height === hPx) return; // rien ne change : pas touché, pas de clignotement
+  wrap.style.height = hPx;
+  // On ne touche plus nous-mêmes au scroll ici. Si ce redimensionnement fait
+  // dévier la position malgré nous (le navigateur peut recaler scrollTop tout
+  // seul), le garde-fou posé sur l'évènement 'scroll' de la conversation (voir
+  // fcBindResizeHandlers) l'annule immédiatement, quelle que soit la position —
+  // en bas ou pas, peu importe : ce n'est jamais à l'app de bouger ce scroll.
 }
 function fcBindResizeHandlers() {
   if (fcResizeHandlersBound) return;
   fcResizeHandlersBound = true;
-  // Tient fcAtBottom à jour à partir du SEUL vrai défilement (utilisateur ou
-  // notre propre scrollTop=scrollHeight) — jamais recalculé à la volée ailleurs,
-  // justement pour ne pas être trompé par un recalage déjà effectué par le
-  // navigateur avant qu'on ait pu le mesurer (voir fcResizeWrap plus haut).
   const msgBox = document.getElementById('fcMessages');
   if (msgBox) {
+    // Un vrai geste de l'utilisateur sur la conversation (molette, trackpad,
+    // glissement tactile) autorise le scroll qui suit. Sans geste récent, tout
+    // évènement 'scroll' qui ne correspond pas à un changement fait par notre
+    // propre code (fcSetScroll) est annulé immédiatement : c'est le navigateur
+    // qui a bougé la position tout seul (redimensionnement, police...), jamais
+    // l'utilisateur ni nous, donc on l'empêche purement et simplement.
+    const markUserInput = () => { fcUserInputAt = Date.now(); };
+    msgBox.addEventListener('wheel', markUserInput, {passive: true});
+    msgBox.addEventListener('touchmove', markUserInput, {passive: true});
+    msgBox.addEventListener('pointerdown', markUserInput, {passive: true});
+    msgBox.addEventListener('keydown', markUserInput, {passive: true});
     msgBox.addEventListener('scroll', () => {
-      fcAtBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 80;
+      const trustedRecently = Date.now() - fcUserInputAt < 400;
+      const matchesOurOwnWrite = Math.abs(msgBox.scrollTop - fcLastGoodScrollTop) <= 2;
+      if (!trustedRecently && !matchesOurOwnWrite) {
+        msgBox.scrollTop = fcLastGoodScrollTop; // annule le déplacement involontaire
+        return;
+      }
+      fcLastGoodScrollTop = msgBox.scrollTop;
     });
   }
   window.addEventListener('resize', fcResizeWrap);
