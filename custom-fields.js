@@ -1492,7 +1492,16 @@ body.cf-probe-m .nav-mobile-row1,body.cf-probe-m .nav-mobile-row2{width:max-cont
 body.cf-probe-m .nav-mobile-clocks{flex:none!important;}
 body.cf-probe-d .nav-mobile{display:none!important;}
 body.cf-probe-d .nav-desktop{display:flex!important;width:max-content!important;}
-body.cf-probe-d .nav-desktop>*{flex-shrink:0!important;}`;
+body.cf-probe-d .nav-desktop>*{flex-shrink:0!important;}
+/* Cette mesure bascule la nav entre ses deux configurations plusieurs fois par
+   seconde (toutes les 3s, en continu) pour calculer la largeur nécessaire. Le
+   changement est censé être invisible (appliqué puis annulé dans le même
+   calcul JS, sans jamais laisser le navigateur peindre l'état intermédiaire),
+   mais certains affichages en laissent passer un reflet (clignotement de la
+   nav/horloges). On rend la nav invisible (sans changer sa taille, donc sans
+   fausser la mesure) pendant toute la durée de la sonde, pour qu'aucune image
+   de cet état transitoire ne puisse jamais s'afficher. */
+body.cf-probe-m .nav-mobile,body.cf-probe-d .nav-desktop{visibility:hidden!important;}`;
     document.head.appendChild(st);
   }
   const strip = () =>
