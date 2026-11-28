@@ -75,15 +75,15 @@ let fcMessages = [];
 // ── Garde-fou anti-téléportation du scroll de la conversation ──
 // Principe : le navigateur ne doit JAMAIS pouvoir déplacer tout seul la
 // position de défilement de #fcMessages (recalages liés à un redimensionnement
-// du cadre, à un remplacement de police, ou à toute autre cause) — seul un
-// vrai geste de l'utilisateur (molette, trackpad, barre de défilement) ou
-// notre propre code (via fcSetScroll, ouverture d'une conversation, nouveau
-// message...) a le droit de la bouger. fcLastGoodScrollTop retient la
-// dernière position considérée comme légitime ; dès qu'un évènement 'scroll'
-// arrive avec une valeur différente SANS geste utilisateur récent, on annule
-// ce changement immédiatement (voir le listener posé dans fcBindResizeHandlers).
+// du cadre, à un remplacement de police, ou à toute autre cause). On distingue
+// un vrai geste de l'utilisateur d'un recalage involontaire par l'AMPLITUDE du
+// déplacement (un vrai défilement avance toujours par petits pas, même
+// rapide ; un recalage involontaire fait un bond énorme d'un coup) plutôt que
+// par un minutage ("l'utilisateur vient-il de toucher sa souris"), qui échoue
+// justement quand le bond arrive PENDANT un défilement actif. fcLastGoodScrollTop
+// retient la dernière position considérée comme légitime (voir fcSetScroll et
+// le listener 'scroll' posé dans fcBindResizeHandlers).
 let fcLastGoodScrollTop = 0;
-let fcUserInputAt = 0;
 function fcSetScroll(el, value) {
   el.scrollTop = value;
   // On relit la valeur réellement appliquée (le navigateur la limite lui-même
@@ -2300,22 +2300,22 @@ function fcBindResizeHandlers() {
   fcResizeHandlersBound = true;
   const msgBox = document.getElementById('fcMessages');
   if (msgBox) {
-    // Un vrai geste de l'utilisateur sur la conversation (molette, trackpad,
-    // glissement tactile) autorise le scroll qui suit. Sans geste récent, tout
-    // évènement 'scroll' qui ne correspond pas à un changement fait par notre
-    // propre code (fcSetScroll) est annulé immédiatement : c'est le navigateur
-    // qui a bougé la position tout seul (redimensionnement, police...), jamais
-    // l'utilisateur ni nous, donc on l'empêche purement et simplement.
-    const markUserInput = () => { fcUserInputAt = Date.now(); };
-    msgBox.addEventListener('wheel', markUserInput, {passive: true});
-    msgBox.addEventListener('touchmove', markUserInput, {passive: true});
-    msgBox.addEventListener('pointerdown', markUserInput, {passive: true});
-    msgBox.addEventListener('keydown', markUserInput, {passive: true});
+    // Un vrai défilement (molette, trackpad, tactile) avance toujours par
+    // petits pas : chaque évènement 'scroll' ne déplace la position que d'une
+    // fraction de la fenêtre visible à la fois, même pendant un défilement
+    // rapide. Un recalage involontaire du navigateur (redimensionnement,
+    // police...), lui, fait un SEUL bond énorme d'un coup. On se base donc sur
+    // l'amplitude du déplacement, jamais sur "est-ce que l'utilisateur vient
+    // de toucher sa souris" : cette dernière approche échouait justement
+    // quand le bond involontaire arrivait PENDANT que l'utilisateur défilait
+    // activement (les deux étaient alors confondus).
+    const FC_MAX_PLAUSIBLE_SCROLL_STEP = 600; // px — très généreux pour un vrai geste
     msgBox.addEventListener('scroll', () => {
-      const trustedRecently = Date.now() - fcUserInputAt < 400;
-      const matchesOurOwnWrite = Math.abs(msgBox.scrollTop - fcLastGoodScrollTop) <= 2;
-      if (!trustedRecently && !matchesOurOwnWrite) {
-        msgBox.scrollTop = fcLastGoodScrollTop; // annule le déplacement involontaire
+      const delta = Math.abs(msgBox.scrollTop - fcLastGoodScrollTop);
+      const matchesOurOwnWrite = delta <= 2;
+      const plausibleUserStep = delta <= FC_MAX_PLAUSIBLE_SCROLL_STEP;
+      if (!matchesOurOwnWrite && !plausibleUserStep) {
+        msgBox.scrollTop = fcLastGoodScrollTop; // annule le bond involontaire
         return;
       }
       fcLastGoodScrollTop = msgBox.scrollTop;
