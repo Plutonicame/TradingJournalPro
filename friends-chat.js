@@ -2257,49 +2257,48 @@ function fcHandleIncomingMessage(m) {
 // ══ Le cadre du chat va toujours pile jusqu'en bas de l'écran (jamais plus,
 // jamais moins), quel que soit l'appareil : seules les listes internes
 // (contacts / conversation) défilent, jamais la page elle-même. ══
+// Position "collée en bas" de la conversation, mise à jour UNIQUEMENT par le
+// vrai évènement 'scroll' de #fcMessages (voir fcBindResizeHandlers). On ne la
+// recalcule JAMAIS à la volée à l'intérieur de fcResizeWrap : preuve à l'appui
+// (trace navigateur), le navigateur peut déjà avoir recalé scrollTop tout seul
+// (à cause d'un évènement visualViewport "resize" qui se déclenche en vrai,
+// pour une raison indépendante de la hauteur qu'on calcule nous-mêmes) AVANT
+// même que ce code ne s'exécute — donc mesurer fraîchement à ce moment-là
+// donnerait déjà la position fausse. En se basant sur le dernier scroll RÉEL
+// de l'utilisateur (antérieur à ce recalage involontaire), on sait encore que
+// c'était bien en bas juste avant, et on peut corriger.
+let fcAtBottom = true;
 function fcResizeWrap() {
   const wrap = document.getElementById('fcWrap');
   const page = document.getElementById('page-ami');
   if (!wrap || !page || !page.classList.contains('active')) return;
   const box = document.getElementById('fcMessages');
-  // Si la conversation était collée en bas AVANT ce redimensionnement du cadre
-  // (barre d'adresse mobile qui se rétracte/réapparaît, clavier qui s'ouvre ou
-  // se ferme, vérification périodique de la mise en page...), on la recolle en
-  // bas APRÈS. Sinon, le simple changement de hauteur disponible (le scrollTop
-  // ne bouge pas, mais la fenêtre visible devient plus petite) donne
-  // l'impression que la conversation "remonte toute seule", sans qu'on ait
-  // jamais touché au scroll. Seuil volontairement large (pas juste "quelques
-  // pixels") : on préfère recoller en bas un peu trop souvent plutôt que de
-  // laisser passer un cas où le navigateur a déjà recalé le scroll tout seul
-  // avant qu'on ait pu le mesurer.
-  let wasAtBottom = false;
-  if (box) {
-    const dist = box.scrollHeight - box.scrollTop - box.clientHeight;
-    wasAtBottom = dist < 500;
-  }
   const top = wrap.getBoundingClientRect().top;
   const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
   const pagePB = parseFloat(getComputedStyle(page).paddingBottom) || 0;
   let h = vh - top - pagePB - 8; // petite marge de sécurité anti-arrondi
   if (h < 260) h = 260;
-  const hPx = h + 'px';
-  // On ne touche à la hauteur QUE si elle change vraiment : ce code tourne aussi
-  // via une vérification périodique (toutes les 3s, voir custom-fields.js) qui la
-  // plupart du temps ne change rien. Réappliquer la même hauteur à chaque fois
-  // force inutilement le navigateur à recalculer le scroll, ce qui est risqué
-  // pour rien quand rien n'a réellement changé.
-  if (wrap.style.height === hPx) return;
-  wrap.style.height = hPx;
-  if (box && wasAtBottom) {
+  wrap.style.height = h + 'px';
+  if (box && fcAtBottom) {
     box.scrollTop = box.scrollHeight;
     requestAnimationFrame(() => {
-      if (box.isConnected) box.scrollTop = box.scrollHeight;
+      if (box.isConnected && fcAtBottom) box.scrollTop = box.scrollHeight;
     });
   }
 }
 function fcBindResizeHandlers() {
   if (fcResizeHandlersBound) return;
   fcResizeHandlersBound = true;
+  // Tient fcAtBottom à jour à partir du SEUL vrai défilement (utilisateur ou
+  // notre propre scrollTop=scrollHeight) — jamais recalculé à la volée ailleurs,
+  // justement pour ne pas être trompé par un recalage déjà effectué par le
+  // navigateur avant qu'on ait pu le mesurer (voir fcResizeWrap plus haut).
+  const msgBox = document.getElementById('fcMessages');
+  if (msgBox) {
+    msgBox.addEventListener('scroll', () => {
+      fcAtBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 80;
+    });
+  }
   window.addEventListener('resize', fcResizeWrap);
   window.addEventListener('orientationchange', () => setTimeout(fcResizeWrap, 60));
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fcResizeWrap);
