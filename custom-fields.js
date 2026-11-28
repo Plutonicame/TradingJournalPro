@@ -3133,7 +3133,34 @@ document.addEventListener('DOMContentLoaded', function () {
   window.addEventListener('resize', schedule);
   window.addEventListener('load', schedule);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(schedule);
-  setInterval(schedule, 3000);
+  // La vérification périodique (sans vrai redimensionnement de fenêtre derrière)
+  // peut tomber pile sur une mesure à la limite entre deux modes et osciller
+  // d'un cycle à l'autre - ce qui provoquait un clignotement visible (barre de
+  // nav / largeur de la conversation qui change puis revient aussitôt). On
+  // n'applique donc un changement détecté par CETTE vérification périodique
+  // que s'il est retrouvé deux fois de suite (confirmé ~3s plus tard) ; un vrai
+  // redimensionnement de fenêtre, lui, passe toujours par 'resize' ci-dessus et
+  // s'applique donc immédiatement, sans ce délai.
+  let pendingPeriodicMode = null;
+  setInterval(() => {
+    try {
+      if (cfModeOverride() !== 'auto') {
+        pendingPeriodicMode = null;
+        return;
+      }
+      const measured = cfComputeAutoMode(0); // lecture seule, ne modifie rien
+      if (measured === _cfAutoMode) {
+        pendingPeriodicMode = null;
+        return;
+      }
+      if (pendingPeriodicMode === measured) {
+        pendingPeriodicMode = null;
+        if (cfUpdateAutoMode()) cfRecomputeLayout();
+      } else {
+        pendingPeriodicMode = measured;
+      }
+    } catch (e) {}
+  }, 3000);
 })();
 
 
